@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'" />
+  <title>生境沙盒 · Habitat Sandbox</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+            <defs>
+              <linearGradient id="bm" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#e8b06a"/><stop offset="1" stop-color="#5fc49e"/>
+              </linearGradient>
+            </defs>
+            <path d="M16 3 C9 9 6 14 6 19 a10 10 0 0 0 20 0 C26 14 23 9 16 3 Z" fill="none" stroke="url(#bm)" stroke-width="2.4"/>
+            <path d="M16 12 C13 15 11.5 17.5 11.5 20 a4.5 4.5 0 0 0 9 0 C20.5 17.5 19 15 16 12 Z" fill="url(#bm)" opacity="0.85"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">生境沙盒</div>
+          <div class="brand-sub">Habitat Sandbox</div>
+        </div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot">
+        <div class="mode-chip" id="modeChip">演示模式</div>
+      </div>
+    </aside>
+    <main class="main" id="main"></main>
+  </div>
+  <div class="modal-backdrop" id="modalBackdrop" hidden>
+    <div class="modal" id="modal"></div>
+  </div>
+  <div class="toasts" id="toasts"></div>
+  <div class="loading-overlay" id="loading" hidden>
+    <div class="loading-box">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">处理中…</div>
+    </div>
+  </div>
+  <script src="js/app.js"></script>
+</body>
+</html>

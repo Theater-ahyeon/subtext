@@ -1,0 +1,66 @@
+'use strict';
+const { contextBridge, ipcRenderer } = require('electron');
+
+const invoke = (channel, payload) => ipcRenderer.invoke(channel, payload).then(r => {
+  if (!r) throw new Error('IPC 无响应');
+  if (r.ok) return r.data;
+  throw new Error(r.error || '未知错误');
+});
+
+contextBridge.exposeInMainWorld('habitat', {
+  appInfo: () => invoke('app:info'),
+  persons: {
+    list: () => invoke('persons:list'),
+    create: (p) => invoke('persons:create', p),
+    del: (p) => invoke('persons:delete', p),
+    get: (p) => invoke('persons:get', p),
+    update: (p) => invoke('persons:update', p),
+  },
+  evidence: {
+    add: (p) => invoke('evidence:add', p),
+    del: (p) => invoke('evidence:delete', p),
+  },
+  imp: {
+    parse: (p) => invoke('import:parse', p),
+    commit: (p) => invoke('import:commit', p),
+    file: (p) => invoke('import:file', p),
+  },
+  card: {
+    induce: (p) => invoke('card:induce', p),
+    compile: (p) => invoke('card:compile', p),
+    addClaim: (p) => invoke('claims:add', p),
+    updateClaim: (p) => invoke('claims:update', p),
+    delClaim: (p) => invoke('claims:delete', p),
+    addDyn: (p) => invoke('dynamic:add', p),
+    resolveDyn: (p) => invoke('dynamic:resolve', p),
+    export: (p) => invoke('card:export', p),
+  },
+  session: {
+    start: (p) => invoke('session:start', p),
+    send: (p) => invoke('session:send', p),
+    end: (p) => invoke('session:end', p),
+    list: (p) => invoke('session:list', p),
+    get: (p) => invoke('session:get', p),
+  },
+  loop: {
+    freeze: (p) => invoke('prediction:freeze', p),
+    predictions: (p) => invoke('prediction:list', p),
+    feedback: (p) => invoke('feedback:submit', p),
+    attributions: (p) => invoke('attribution:list', p),
+  },
+  stats: (p) => invoke('stats:get', p),
+  radar: (p) => invoke('radar:get', p),
+  interview: {
+    state: (p) => invoke('interview:state', p),
+    answer: (p) => invoke('interview:answer', p),
+    probeAnswer: (p) => invoke('interview:probeAnswer', p),
+    summary: (p) => invoke('interview:summary', p),
+    finalize: (p) => invoke('interview:finalize', p),
+    writeClaims: (p) => invoke('interview:writeClaims', p),
+  },
+  settings: {
+    get: () => invoke('settings:get'),
+    set: (p) => invoke('settings:set', p),
+    test: () => invoke('settings:test'),
+  },
+});
