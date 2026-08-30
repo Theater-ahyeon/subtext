@@ -112,6 +112,7 @@ async function viewHome(el) {
     <div class="page-head">
       <div class="page-title">人物</div>
       <div class="page-desc">为每一位你想理解、想演练的真实对象建立一份<b>本地生境档案</b>。所有数据只保存在你自己的电脑上。</div>
+      <div class="mt8"><button class="btn sm ghost" id="importCardBtn">导入卡片文件</button></div>
     </div>
     ${state.persons.length ? `
       <div class="person-grid">
@@ -170,6 +171,12 @@ async function viewHome(el) {
       const b = await guard(() => H.persons.create({ name, alias: $('#mAlias').value.trim() }), '创建中…');
       if (b) { closeModal(); toast('已创建', 'ok'); state.currentId = b.id; go('card'); }
     };
+  };
+  $('#addPersonCard') && ($('#addPersonCard').onclick = openCreate);
+  $('#emptyAdd') && ($('#emptyAdd').onclick = openCreate);
+  $('#importCardBtn').onclick = async () => {
+    const r = await guard(() => H.card.importCard(), '导入中…');
+    if (r && !r.canceled) { toast(`已导入「${r.name}」（${r.claims} 条认知条目）`, 'ok'); state.currentId = r.id; go('card'); }
   };
 }
 

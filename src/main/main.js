@@ -255,6 +255,40 @@ handle('card:export', async ({ id }) => {
   return { path: r.filePath };
 });
 
+handle('card:import', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: '导入生境卡',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    properties: ['openFile'],
+  });
+  if (r.canceled || !r.filePaths.length) return { canceled: true };
+  let data;
+  try { data = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8')); }
+  catch { throw new Error('文件不是合法 JSON'); }
+  if (data.format !== 'habitat-sandbox-card' || !Array.isArray(data.claims)) {
+    throw new Error('不是本工具导出的生境卡文件（缺少 format 标识）');
+  }
+  const bundle = store.createPerson(String(data.name || '导入人物') + '（导入）', String(data.alias || ''));
+  bundle.claims = data.claims
+    .filter(c => c && c.text && P.LAYER_NAMES[c.layer])
+    .map(c => ({
+      id: require('./store').uid(), layer: c.layer,
+      text: String(c.text).slice(0, 200),
+      epistemic: ['fact', 'inference', 'blank'].includes(c.epistemic) ? c.epistemic : 'inference',
+      source: ['evidence', 'user', 'ai'].includes(c.source) ? c.source : 'ai',
+      refs: [], confidence: typeof c.confidence === 'number' ? c.confidence : 0.5,
+      note: '来自导入卡片' + (c.note ? '：' + String(c.note).slice(0, 80) : ''),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }));
+  if (Array.isArray(data.dynamic)) {
+    bundle.dynamic = data.dynamic
+      .filter(d => d && d.text)
+      .map(d => ({ id: require('./store').uid(), text: String(d.text).slice(0, 300), asOf: d.asOf || new Date().toISOString(), resolved: !!d.resolved, createdAt: new Date().toISOString() }));
+  }
+  store.savePerson(bundle);
+  return { id: bundle.id, name: bundle.name, claims: bundle.claims.length };
+});
+
 // ---------- misc ----------
 handle('shell:openPath', ({ p }) => shell.openPath(p));
 

@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('habitat', {
     addDyn: (p) => invoke('dynamic:add', p),
     resolveDyn: (p) => invoke('dynamic:resolve', p),
     export: (p) => invoke('card:export', p),
+    importCard: () => invoke('card:import'),
   },
   session: {
     start: (p) => invoke('session:start', p),
