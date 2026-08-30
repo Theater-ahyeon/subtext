@@ -2,6 +2,15 @@
 
 所有重要变更记录在本文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [1.0.1] - 2026-08-31
+
+第二轮对抗式审查修复（安全回归猎杀 / 产品门面 / 发布工程）。详见 [docs/round-06-second-review.md](docs/round-06-second-review.md)。
+
+### Fixed
+- **数据污染**：微信"上午/下午"时间格式解析失败与同人群连发丢消息（重写无时间戳解析器）、extractJson 多围栏取错候选、IPC 并发丢更新（人物级互斥）、撤销后闭环率 200%、卡片总量截断死代码、复盘失败永久失去报告
+- **安全纪律**：红线守卫补齐卡片写入通道（claims/dynamic/访谈/目标）+ 归一化防变形绕过；删除档案失败不再静默（防"复活"）；访谈用户陈述统一以推断落库；`__proto__` 索引污染；file:// 导航全禁；claims 字段校验；API Key 密文仅主进程可写
+- **发布门面**：README 安装表如实标注各平台状态、移除 404 badge、命中率口径修正（错判计入分母）、CI 加固（action SHA 锁定/最小权限/npm ci/SHA256SUMS）、API Key 加密跨平台如实描述 + 明文状态警示 + 清除入口
+
 ## [1.0.0] - 2026-08-31
 
 首个公开发布版本。
@@ -15,7 +24,7 @@
 - **校准闭环**：预测单冻结 → 现实回流 → 七类差异归因 → 可撤销的卡片最小修正；直录现实反应（无预测单）；Top1/Top2 命中率与闭环完成率统计
 - **话题雷达**：空白 + 用户陈述待验证 + 访谈待确认 → 现实求证话题
 - **红线守卫**：操控类请求三通道硬过滤；临床标签禁令；导入知情提示；API Key DPAPI 加密
-- **跨平台打包**：Windows NSIS/zip（本地构建）+ macOS dmg（x64/arm64）与 Linux AppImage/deb（CI 构建）
+- **跨平台打包**：Windows NSIS/zip（本地构建，已发布）；macOS dmg（x64/arm64）与 Linux AppImage/deb 的 CI 构建已配置，待启用（见 docs/enable-ci.md）
 - **演示模式**：离线 mock provider，无 Key 可体验全流程
 - 测试 24 项（纯 Node，无 GUI 依赖）
 

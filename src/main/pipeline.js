@@ -97,6 +97,7 @@ const clampText = (v, n) => String(v == null ? '' : v).slice(0, n);
 // ---------- 演练 ----------
 async function startSession(store, bundle, settings, scenario, goal) {
   if (P.redlineCheck(scenario || '')) throw new Error('场景包含操控/打压/伤害类内容，本工具不提供此类演练。请改写为中性情境描述，例如"你们因小事冷战三天，你想修复关系"。');
+  if (P.redlineCheck(goal || '')) throw new Error('演练目标包含操控/打压/伤害类内容，本工具不提供此类演练。目标请写成你想练习的表达方式，例如"练习接住拒绝"。');
   const session = { id: require('./store').uid(), scenario: clampText(scenario, 2000), goal: clampText(goal, 2000), status: 'active', createdAt: new Date().toISOString(), endedAt: null, messages: [] };
   bundle.sessions.push(session);
   const sys = P.twinSystemPrompt(bundle, session.scenario);
@@ -133,18 +134,22 @@ function sessionTranscript(session, max = 60) {
   return session.messages
     .filter(m => m.role !== 'system')
     .slice(-max)
-    .map(m => (m.role === 'twin' ? '她: ' : '用户: ') + m.content)
+    .map(m => (m.role === 'twin' ? '她: ' : '用户: ') + m.content.replace(/\r?\n+/g, ' ⏎ '))
     .join('\n\n');
 }
 
 async function endSession(store, bundle, settings, sessionId) {
   const session = bundle.sessions.find(s => s.id === sessionId);
   if (!session) throw new Error('演练会话不存在');
-  session.status = 'ended';
-  session.endedAt = new Date().toISOString();
+  if (session.status === 'ended' && (bundle.sessionReports || []).some(r => r.sessionId === sessionId)) {
+    throw new Error('该演练已结束且已有复盘报告');
+  }
   const report = await chat(settings, [
     { role: 'user', content: P.reviewPrompt(bundle, sessionTranscript(session), session.goal) },
   ], { task: 'REVIEW', temperature: settings.analysisTemperature });
+  // 报告成功生成后才落"已结束"状态：失败时会话仍可重试复盘
+  session.status = 'ended';
+  session.endedAt = new Date().toISOString();
   if (!bundle.sessionReports) bundle.sessionReports = [];
   bundle.sessionReports.push({ sessionId, report, ts: new Date().toISOString() });
   store.savePerson(bundle);
@@ -161,7 +166,7 @@ async function freezePrediction(store, bundle, settings, sessionId) {
   const parsed = extractJson(raw);
   const prediction = {
     id: require('./store').uid(), sessionId,
-    hypotheses: (parsed.hypotheses || []).map(h => ({
+    hypotheses: (parsed.hypotheses || []).slice(0, 6).map(h => ({
       text: clampText(h.text, 300), prob: clamp01(h.prob),
       basis: clampText(h.basis, 300), verify: clampText(h.verify, 300),
     })).filter(h => h.text),
@@ -260,19 +265,38 @@ function undoAttribution(store, bundle, attributionId) {
   for (const u of (record.updates || [])) {
     try {
       if (u.action === 'add' && u.claimId) {
-        const before = bundle.claims.length;
-        bundle.claims = bundle.claims.filter(c => c.id !== u.claimId);
-        if (bundle.claims.length < before) reverted.push('删 ' + (u.text || '').slice(0, 20));
+        const c = bundle.claims.find(x => x.id === u.claimId);
+        if (!c) continue;
+        // 归因之后用户又编辑过的条目不删，避免误伤
+        if (c.updatedAt && record.createdAt && c.updatedAt > record.createdAt && c.text !== u.text) {
+          reverted.push('跳过（已被编辑）: ' + (c.text || '').slice(0, 20));
+          continue;
+        }
+        bundle.claims = bundle.claims.filter(x => x.id !== u.claimId);
+        reverted.push('删 ' + (u.text || '').slice(0, 20));
       } else if (u.action === 'update' && u.claimId && u.prevText) {
         const c = bundle.claims.find(x => x.id === u.claimId);
-        if (c) { c.text = u.prevText; c.updatedAt = new Date().toISOString(); reverted.push('还原 ' + u.prevText.slice(0, 20)); }
+        if (c) {
+          c.text = u.prevText;
+          // 清掉当时追加的"原: …"备注段
+          if (c.note) c.note = c.note.split(' | ').filter(seg => !seg.startsWith('原: ')).join(' | ');
+          c.updatedAt = new Date().toISOString();
+          reverted.push('还原 ' + u.prevText.slice(0, 20));
+        }
       } else if (u.action === 'deprecate' && u.claimId && typeof u.prevConf === 'number') {
         const c = bundle.claims.find(x => x.id === u.claimId);
-        if (c) { c.confidence = u.prevConf; reverted.push('恢复置信度 ' + c.text.slice(0, 20)); }
+        if (c) {
+          c.confidence = u.prevConf;
+          if (c.note) c.note = c.note.split(' | ').filter(seg => !seg.startsWith('归因标记不可靠')).join(' | ');
+          reverted.push('恢复置信度 ' + c.text.slice(0, 20));
+        }
       }
     } catch { /* 单条撤销失败不影响其余 */ }
   }
   record.undone = true;
+  // 关联反馈退出闭环分子，防止撤销后重复提交导致闭环率超 100%
+  const fb = bundle.feedbacks.find(f => f.id === record.feedbackId);
+  if (fb) fb.predictionId = null;
   if (record.predictionId) {
     const pred = bundle.predictions.find(p => p.id === record.predictionId);
     if (pred) pred.status = 'open';
@@ -311,6 +335,7 @@ function recordsDigest(records) {
 }
 
 async function interviewAnswer(store, bundle, settings, { qid, answer, skipped }) {
+  if (!skipped && P.redlineCheck(answer)) throw new Error('回答包含操控/伤害类描述，本工具不记录这类内容');
   const iv = bundle.interview;
   iv.started = true;
   const q = P.INTERVIEW_QUESTIONS.find(x => x.qid === qid);
@@ -325,6 +350,9 @@ async function interviewAnswer(store, bundle, settings, { qid, answer, skipped }
     return { record, nextQ: iv.currentQ, probe: null };
   }
   record.answer = clampText(answer, 4000);
+  // 重答同一题：清掉上一轮的追问残留
+  record.probe = null;
+  record.probeAnswer = '';
   // 判断是否需要追问
   let probe = null;
   const digest = recordsDigest(Object.assign({}, iv.records, { [qid]: record }));
@@ -389,18 +417,20 @@ async function interviewFinalize(store, bundle, settings) {
   return { final: bundle.interview.final, suggestions: bundle.interview.suggestions };
 }
 
-/** 将勾选的访谈建议写入生境卡（来源=用户陈述，标注"待验证"） */
+/** 将勾选的访谈建议写入生境卡（来源=用户陈述，一律以"推断"认识层级落库） */
 function interviewWriteClaims(store, bundle, indexes) {
   const written = [];
-  for (const i of indexes) {
+  for (const raw of indexes) {
+    const i = Number(raw);
+    if (!Number.isInteger(i) || i < 0 || i >= bundle.interview.suggestions.length) continue;
     const s = bundle.interview.suggestions[i];
     if (!s || s.written) continue;
     const dup = bundle.claims.some(x => similar(x.text, s.text));
     if (dup) { s.written = true; continue; }
     bundle.claims.push({
       id: require('./store').uid(), layer: s.layer, text: s.text,
-      // 用户陈述不享有证据事实地位：即使 kind=fact 也以"用户陈述"来源与待验证 note 落库
-      epistemic: s.kind === 'fact' ? 'fact' : 'inference', source: 'user', refs: [],
+      // 纪律统一：无证据引用的条目不得以"事实"身份进卡（与归纳器同一规则），用户陈述以推断+待验证落库
+      epistemic: 'inference', source: 'user', refs: [],
       confidence: s.kind === 'fact' ? 0.7 : 0.6,
       note: '来自24问访谈 · 用户陈述·待验证', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     });

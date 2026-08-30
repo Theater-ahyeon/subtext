@@ -14,17 +14,24 @@ const now = () => new Date().toISOString();
 function atomicWrite(file, data) {
   const tmp = file + '.tmp-' + process.pid + '-' + Date.now();
   fs.writeFileSync(tmp, data, 'utf8');
-  // Windows 下目标文件可能被杀软/索引器短暂占用，重试后降级复制
+  // Windows 下目标文件可能被杀软/索引器短暂占用，重试后降级（降级也先写临时名再 rename，保持尽量原子）
+  const sab = new Int32Array(new SharedArrayBuffer(4));
   for (let i = 0; i < 3; i++) {
     try { fs.renameSync(tmp, file); return; }
     catch (err) {
       if (i === 2) {
-        try { fs.copyFileSync(tmp, file); fs.rmSync(tmp, { force: true }); return; }
-        catch { try { fs.rmSync(tmp, { force: true }); } catch {} throw err; }
+        try {
+          const tmp2 = file + '.cp-' + process.pid + '-' + Date.now();
+          fs.copyFileSync(tmp, tmp2);
+          fs.renameSync(tmp2, file);
+          fs.rmSync(tmp, { force: true });
+          return;
+        } catch (copyErr) {
+          try { fs.rmSync(tmp, { force: true }); } catch {}
+          throw new Error('保存失败（文件可能被占用）: ' + (copyErr && copyErr.code || copyErr));
+        }
       }
-      const wait = [50, 200][i] || 200;
-      const until = Date.now() + wait;
-      while (Date.now() < until) { /* 忙等短暂退避 */ }
+      try { Atomics.wait(sab, 0, 0, [50, 200][i] || 200); } catch { /* 主线程不支持时退化为同步 */ }
     }
   }
 }
@@ -42,26 +49,46 @@ class Store {
     this.reconcile();
   }
 
-  /** 启动对账：persons 目录为唯一真相，修复索引漂移（孤儿补回 / 幽灵剔除），并清理残留 tmp */
+  /** 启动对账：persons 目录为唯一真相，修复索引漂移；损坏档案隔离到 corrupt/ 并可计数 */
   reconcile() {
+    this.corruptCount = 0;
     try {
       const dir = path.join(this.dataDir, 'persons');
+      const corruptDir = path.join(this.dataDir, 'corrupt');
       for (const f of fs.readdirSync(dir)) {
-        if (f.includes('.tmp-')) { try { fs.rmSync(path.join(dir, f), { force: true }); } catch {} }
+        if (f.includes('.tmp-') || f.includes('.cp-')) { try { fs.rmSync(path.join(dir, f), { force: true }); } catch {} }
       }
-      const onDisk = fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => f.replace(/\.json$/, ''));
-      const index = this.listPersons().filter(p => onDisk.includes(p.id));
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+      const onDisk = [];
+      for (const f of files) {
+        const id = f.replace(/\.json$/, '');
+        try {
+          JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+          onDisk.push(id);
+        } catch {
+          // 损坏档案：隔离保留（隐私承诺——不静默删除），但不进索引
+          try {
+            fs.mkdirSync(corruptDir, { recursive: true });
+            fs.renameSync(path.join(dir, f), path.join(corruptDir, f.replace('.json', '') + '-' + Date.now() + '.json'));
+            this.corruptCount++;
+          } catch {}
+        }
+      }
+      let index = this.listPersons();
+      index = index.filter(p => onDisk.includes(p.id));
       for (const id of onDisk) {
         if (!index.some(p => p.id === id)) {
           try {
             const b = JSON.parse(fs.readFileSync(path.join(dir, id + '.json'), 'utf8'));
             index.push({ id, name: b.name || id, alias: b.alias || '', createdAt: b.createdAt || new Date().toISOString() });
-          } catch { /* 损坏文件不进索引 */ }
+          } catch { /* 不可达：上面已验证过 */ }
         }
       }
       atomicWrite(this.indexFile(), JSON.stringify(index, null, 2));
     } catch { /* 对账失败不阻塞启动 */ }
   }
+
+  getCorruptCount() { return this.corruptCount || 0; }
 
   defaultSettings() {
     return {
@@ -102,8 +129,10 @@ class Store {
 
   // ---------- persons ----------
   listPersons() {
-    try { return JSON.parse(fs.readFileSync(this.indexFile(), 'utf8')); }
-    catch { return []; }
+    try {
+      const v = JSON.parse(fs.readFileSync(this.indexFile(), 'utf8'));
+      return Array.isArray(v) ? v : [];
+    } catch { return []; }
   }
 
   createPerson(name, alias) {
@@ -144,7 +173,9 @@ class Store {
   }
 
   deletePerson(id) {
-    try { fs.unlinkSync(this.personFile(id)); } catch {}
+    // 隐私承诺：删除必须是真删除。文件被占用导致 unlink 失败时明确报错，绝不静默（否则 reconcile 会把它当孤儿"复活"）
+    try { fs.unlinkSync(this.personFile(id)); }
+    catch (err) { throw new Error('删除失败：档案文件被占用（可能被杀毒软件/同步盘锁定），请稍后重试'); }
     atomicWrite(this.indexFile(), JSON.stringify(this.listPersons().filter(p => p.id !== id), null, 2));
   }
 
@@ -171,12 +202,13 @@ class Store {
 
   // ---------- 统计 ----------
   computeStats(bundle) {
-    const VALID_VERDICTS = ['hit', 'partial', 'miss'];
+    // 命中率口径：有预测单且未撤销的归因全部计入分母；错误类 verdict（错但知道错在哪层）按未命中计，不再剔除
+    const RESULT_VERDICTS = { hit: 'hit', partial: 'partial', miss: 'miss', 'fact-error': 'miss', 'material-missing': 'miss', 'temperament-error': 'miss', 'expression-error': 'miss' };
     const attributed = bundle.attributions.filter(a => a.predictionId && !a.undone);
-    const valid = attributed.filter(a => VALID_VERDICTS.includes(a.verdict));
+    const valid = attributed.filter(a => RESULT_VERDICTS[a.verdict]);
     const unknown = attributed.length - valid.length;
-    const hit = valid.filter(a => a.verdict === 'hit').length;
-    const partial = valid.filter(a => a.verdict === 'partial').length;
+    const hit = valid.filter(a => RESULT_VERDICTS[a.verdict] === 'hit').length;
+    const partial = valid.filter(a => RESULT_VERDICTS[a.verdict] === 'partial').length;
     const total = valid.length;
     const byLayer = { basic: 0, life: 0, temperament: 0, expression: 0 };
     const byEpistemic = { fact: 0, inference: 0, blank: 0 };
@@ -186,7 +218,7 @@ class Store {
       byEpistemic[c.epistemic] = (byEpistemic[c.epistemic] || 0) + 1;
       bySource[c.source] = (bySource[c.source] || 0) + 1;
     }
-    const linkedFeedbacks = bundle.feedbacks.filter(f => f.predictionId && bundle.predictions.some(p => p.id === f.predictionId)).length;
+    const linkedFeedbacks = bundle.feedbacks.filter(f => f.predictionId && bundle.predictions.some(p => p.id === f.predictionId && p.status === 'attributed')).length;
     const openPredictions = bundle.predictions.filter(p => p.status === 'open').length;
     return {
       evidence: bundle.evidence.length,
@@ -196,12 +228,13 @@ class Store {
       predictions: bundle.predictions.length,
       openPredictions,
       feedbacks: bundle.feedbacks.length,
+      linkedFeedbacks,
       attributions: total,
       attributionsAll: attributed.length,
       unknownVerdicts: unknown,
       hitRateTop1: total ? hit / total : null,
       hitRateTop2: total ? (hit + partial) / total : null,
-      loopCompletion: bundle.predictions.length ? linkedFeedbacks / bundle.predictions.length : null,
+      loopCompletion: bundle.predictions.length ? Math.min(1, linkedFeedbacks / bundle.predictions.length) : null,
     };
   }
 }

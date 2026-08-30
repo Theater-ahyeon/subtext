@@ -41,11 +41,9 @@ function createWindow() {
       spellcheck: false,
     },
   });
-  // 渲染层被攻破时不允许导航或开新窗口
+  // SPA 无合法导航需求：一律拦截（防止被注入渲染层把窗口导到本地恶意页面获得 IPC 桥）
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file://')) e.preventDefault();
-  });
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
@@ -69,10 +67,18 @@ function validId(id) {
   return String(id);
 }
 
+// 人物级互斥：所有 IPC 读-改-写按 personId 串行，防并发覆盖（演练双发/归纳期间编辑）
+const personLocks = new Map();
 function withPerson(id, fn) {
-  const bundle = store.loadPerson(validId(id));
-  if (!bundle) throw new Error('人物不存在');
-  return fn(bundle);
+  const pid = validId(id);
+  const prev = personLocks.get(pid) || Promise.resolve();
+  const next = prev.then(() => {
+    const bundle = store.loadPerson(pid);
+    if (!bundle) throw new Error('人物不存在');
+    return fn(bundle);
+  });
+  personLocks.set(pid, next.catch(() => {}));
+  return next;
 }
 
 /** 内部用完整设置（含解密后的 key）；渲染层永远拿不到明文 key */
@@ -87,15 +93,16 @@ function effectiveSettings() {
 
 function encryptApiKey(settings, patch) {
   const out = { ...patch };
+  delete out.apiKeyEnc; // 密文只允许主进程写入，渲染层不能直写
   if (typeof out.apiKey === 'string') {
     if (out.apiKey === '') {
       delete out.apiKey;
-      out.apiKeyEnc = '';
+      out.apiKeyEnc = ''; // 显式清除（UI"清除 Key"按钮）
     } else if (safeStorage && safeStorage.isEncryptionAvailable && safeStorage.isEncryptionAvailable()) {
       try {
         out.apiKeyEnc = safeStorage.encryptString(out.apiKey).toString('base64');
         delete out.apiKey; // 明文不落盘
-      } catch { /* 加密失败则退回明文（旧机制） */ }
+      } catch { /* 加密失败则退回明文（settings:get 的 keyEncrypted=false 会向 UI 暴露此状态） */ }
     }
   }
   return out;
@@ -113,7 +120,7 @@ function handle(channel, fn) {
 }
 
 // ---------- app ----------
-handle('app:info', () => ({ version: app.getVersion(), dataDir: path.join(app.getPath('userData'), 'habitat-data'), platform: process.platform }));
+handle('app:info', () => ({ version: app.getVersion(), dataDir: path.join(app.getPath('userData'), 'habitat-data'), platform: process.platform, corruptArchives: store.getCorruptCount() }));
 
 // ---------- persons ----------
 handle('persons:list', () => store.listPersons());
@@ -131,7 +138,13 @@ handle('evidence:add', ({ id, items }) => withPerson(id, b => {
   const added = [];
   for (const it of items.slice(0, 500)) {
     if (!it.text || !String(it.text).trim()) continue;
-    added.push(store.addEvidence(b, { sourceType: it.sourceType || 'other', text: String(it.text).slice(0, 4000), ts: it.ts || '', sender: it.sender || '', isSelf: it.isSelf }));
+    added.push(store.addEvidence(b, {
+      sourceType: String(it.sourceType || 'other').slice(0, 64),
+      text: String(it.text).slice(0, 4000),
+      ts: String(it.ts || '').slice(0, 64),
+      sender: String(it.sender || '').slice(0, 64),
+      isSelf: it.isSelf,
+    }));
   }
   store.savePerson(b);
   return { added: added.length, total: b.evidence.length, truncated: Math.max(0, (items || []).length - 500) };
@@ -193,16 +206,24 @@ handle('card:induce', ({ id }, event) => withPerson(id, async b => {
   });
 }));
 handle('claims:add', ({ id, claim }) => withPerson(id, b => {
+  if (P.redlineCheck(claim && claim.text)) throw new Error('内容包含操控/伤害类描述，本工具不录入这类内容');
   const c = store.addClaim(b, { ...claim, text: String(claim.text || '').slice(0, 200) });
   store.savePerson(b);
   return c;
 }));
+const CLAIM_LAYERS = ['basic', 'life', 'temperament', 'expression'];
+const CLAIM_EPISTEMICS = ['fact', 'inference', 'blank'];
 handle('claims:update', ({ id, claimId, patch }) => withPerson(id, b => {
   const c = b.claims.find(x => x.id === claimId);
   if (!c) throw new Error('条目不存在');
-  for (const k of ['layer', 'text', 'epistemic', 'confidence', 'note']) {
-    if (patch[k] !== undefined) c[k] = k === 'text' ? String(patch[k]).slice(0, 200) : patch[k];
+  if (patch.text !== undefined) {
+    if (P.redlineCheck(patch.text)) throw new Error('内容包含操控/伤害类描述，本工具不录入这类内容');
+    c.text = String(patch.text).slice(0, 200);
   }
+  if (patch.layer !== undefined && CLAIM_LAYERS.includes(patch.layer)) c.layer = patch.layer;
+  if (patch.epistemic !== undefined && CLAIM_EPISTEMICS.includes(patch.epistemic)) c.epistemic = patch.epistemic;
+  if (patch.confidence !== undefined) c.confidence = Math.min(1, Math.max(0, Number(patch.confidence) || 0));
+  if (patch.note !== undefined) c.note = String(patch.note).slice(0, 200);
   c.updatedAt = new Date().toISOString();
   store.savePerson(b);
   return c;
@@ -213,6 +234,7 @@ handle('claims:delete', ({ id, claimId }) => withPerson(id, b => {
   return true;
 }));
 handle('dynamic:add', ({ id, text }) => withPerson(id, b => {
+  if (P.redlineCheck(text)) throw new Error('内容包含操控/伤害类描述，本工具不录入这类内容');
   const d = { id: require('./store').uid(), text: String(text).slice(0, 300), asOf: new Date().toISOString(), resolved: false, createdAt: new Date().toISOString() };
   b.dynamic.push(d);
   store.savePerson(b);
@@ -363,11 +385,16 @@ handle('card:import', async () => {
   return { id: bundle.id, name: bundle.name, claims: bundle.claims.length };
 });
 
-process.on('uncaughtException', (err) => {
+function logError(err) {
   try {
     const logFile = path.join(app.getPath('userData'), 'habitat-data', 'error.log');
     // 简单轮转：超过 512KB 重写
     try { if (fs.statSync(logFile).size > 512 * 1024) fs.writeFileSync(logFile, ''); } catch {}
-    fs.appendFileSync(logFile, new Date().toISOString() + ' ' + (err.stack || String(err)) + '\n');
+    // 脱敏：本机用户路径替换为 ~
+    const home = app.getPath('home');
+    const text = (err.stack || String(err)).split(home).join('~');
+    fs.appendFileSync(logFile, new Date().toISOString() + ' ' + text + '\n');
   } catch {}
-});
+}
+process.on('uncaughtException', logError);
+process.on('unhandledRejection', (reason) => logError(reason instanceof Error ? reason : new Error(String(reason))));

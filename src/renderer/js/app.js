@@ -99,7 +99,8 @@ function renderNav() {
 function needsAttention() { return false; }
 
 function go(view) {
-  if (view !== 'home' && !state.currentId) { toast('请先创建并选择一位人物', 'err'); return; }
+  // 设置与人物页不依赖当前人物；其余视图需要先选择人物
+  if (!['home', 'settings'].includes(view) && !state.currentId) { toast('请先创建并选择一位人物', 'err'); return; }
   state.view = view;
   renderNav();
   render();
@@ -243,7 +244,7 @@ async function viewCard(el) {
     </div>
     <div class="panel">
       <div class="panel-title">话题雷达</div>
-      <div class="panel-sub">由生境卡空白与访谈待确认项生成 —— 这些是"你还不知道的事"，可以在下次真实聊天中自然求证。</div>
+      <div class="panel-sub">由生境卡空白、<b>用户陈述待验证</b>与访谈待确认项生成 —— 这些是"你还不知道或还没验证的事"，可以在下次真实聊天中自然求证。</div>
       <div id="radarBox"><div class="muted small">加载中…</div></div>
     </div>
   `;
@@ -334,7 +335,7 @@ function claimForm(b, layer, claim, done) {
         <option value="evidence" ${claim && claim.source === 'evidence' ? 'selected' : ''}>证据支持</option>
         <option value="ai" ${claim && claim.source === 'ai' ? 'selected' : ''}>AI推断</option>
       </select></label>
-      <label class="field"><span>置信度</span><input type="number" id="mConf" min="0" max="1" step="0.05" value="${claim ? claim.confidence : 0.6}"></label>
+      <label class="field"><span>置信度</span><input type="number" id="mConf" min="0" max="1" step="0.05" value="${esc(String(claim ? (claim.confidence ?? 0.6) : 0.6))}"></label>
     </div>
     <label class="field"><span>备注（可选）</span><input type="text" id="mNote" value="${esc(claim ? claim.note || '' : '')}"></label>
     <div class="modal-ops"><button class="btn ghost" id="mCancel">取消</button><button class="btn primary" id="mOk">${claim ? '保存' : '添加'}</button></div>`);
@@ -679,7 +680,11 @@ function renderChat(el, sessions, report) {
         <div class="chat-scroll" id="chatScroll">
           ${state.session.messages.map(m => chatBubble(m)).join('')}
         </div>
-        ${state.session.readonly ? '' : `
+        ${state.session.readonly ? (report ? '' : `
+        <div class="flex mt14">
+          <button class="btn sm primary" id="regenReportBtn">重新生成复盘</button>
+          <span class="muted small">上次复盘生成失败（会话已保留），可重试。</span>
+        </div>`) : `
         <div class="chat-input">
           <input type="text" id="chatText" placeholder="说点什么…（她按生境卡回应）" maxlength="2000">
           <button class="btn primary" id="chatSend">发送</button>
@@ -749,6 +754,10 @@ function renderChat(el, sessions, report) {
       toast('演练已结束', 'ok');
     }
   });
+  $('#regenReportBtn') && ($('#regenReportBtn').onclick = async () => {
+    const r = await guard(() => H.session.end({ id: state.currentId, sessionId: state.session.id }), '重新生成复盘报告…');
+    if (r) renderChat(el, sessions, r.report);
+  });
   $('#backScn').onclick = () => { state.session = null; viewRehearsal(el); };
 }
 
@@ -786,9 +795,9 @@ async function viewCalibration(el) {
       <div class="page-desc">核心循环：<b>预测冻结 → 现实回流 → 差异归因 → 卡片更新</b>。AI 的扮演是一次预测，她的真实反应是真值，差值就是学习信号。归因对卡片的修改可以撤销。</div>
     </div>
     <div class="stat-row mb14">
-      <div class="stat-card amber"><div class="stat-num">${pct(stats.hitRateTop1)}</div><div class="stat-label">Top1 命中率（${stats.attributions} 次有效归因${stats.unknownVerdicts ? `，${stats.unknownVerdicts} 次不计入` : ''}）</div></div>
+      <div class="stat-card amber"><div class="stat-num">${pct(stats.hitRateTop1)}</div><div class="stat-label">Top1 命中率（${stats.attributions} 次有效归因，错判按未命中计入${stats.unknownVerdicts ? `，${stats.unknownVerdicts} 次无效不计` : ''}）</div></div>
       <div class="stat-card jade"><div class="stat-num">${pct(stats.hitRateTop2)}</div><div class="stat-label">Top2 命中率</div></div>
-      <div class="stat-card blue"><div class="stat-num">${pct(stats.loopCompletion)}</div><div class="stat-label">闭环完成率（已回流 ${stats.feedbacks ? Math.min(stats.feedbacks, stats.predictions) : 0} / 预测单 ${stats.predictions}）</div></div>
+      <div class="stat-card blue"><div class="stat-num">${pct(stats.loopCompletion)}</div><div class="stat-label">闭环完成率（已回流 ${stats.linkedFeedbacks} / 预测单 ${stats.predictions}）</div></div>
       <div class="stat-card violet"><div class="stat-num">${stats.openPredictions}<span class="unit">个</span></div><div class="stat-label">待回流预测单</div></div>
     </div>
     ${noLoop ? `
@@ -877,7 +886,7 @@ async function viewSettings(el) {
   el.innerHTML = `
     <div class="page-head">
       <div class="page-title">设置</div>
-      <div class="page-desc">数据存储仅在本机；配置在线模型后，<b>生境卡与相关对话文本会发送给你所配置的模型服务商处理</b>，请自行选择可信服务商。API Key 经系统级加密（DPAPI）保存，不会明文落盘。演示模式无需任何配置。</div>
+      <div class="page-desc">数据存储仅在本机；配置在线模型后，<b>生境卡与相关对话文本会发送给你所配置的模型服务商处理</b>，请自行选择可信服务商。API Key 经系统级加密保存（Windows DPAPI / macOS Keychain / Linux libsecret；系统密钥服务不可用时会明文保存并在此提示）。演示模式无需任何配置。</div>
     </div>
     <div class="panel">
       <div class="panel-title">模型服务</div>
@@ -887,12 +896,14 @@ async function viewSettings(el) {
       </select></label>
       <div id="openaiCfg" class="${s.provider === 'openai' ? '' : 'hidden'}">
         <label class="field"><span>API 地址（Base URL）</span><input type="text" id="stUrl" value="${esc(s.baseUrl)}" placeholder="https://api.openai.com/v1 或任意兼容网关"></label>
-        <label class="field"><span>API Key ${s.hasApiKey ? '<span style="color:var(--jade)">（已配置，留空则保持不变）</span>' : ''}</span><input type="password" id="stKey" placeholder="${s.hasApiKey ? '········（已加密保存）' : 'sk-…'}"></label>
+        <label class="field"><span>API Key ${s.hasApiKey ? '<span style="color:var(--jade)">（已配置，留空则保持不变）</span>' : ''}</span><input type="password" id="stKey" placeholder="${s.hasApiKey ? '········（已保存）' : 'sk-…'}"></label>
         <label class="field"><span>模型</span><input type="text" id="stModel" value="${esc(s.model)}" placeholder="gpt-4o-mini / deepseek-chat / …"></label>
+        ${s.hasApiKey && !s.keyEncrypted ? '<div class="note red mt8">⚠ 本机系统密钥服务不可用，当前 API Key 以<b>明文</b>保存在 settings.json 中。请注意保护该文件，或更换支持系统密钥服务的环境。</div>' : ''}
       </div>
       <div class="flex mt8">
         <button class="btn primary" id="stSave">保存</button>
         <button class="btn" id="stTest">测试连接</button>
+        ${s.hasApiKey ? '<button class="btn danger sm" id="stClearKey">清除 Key</button>' : ''}
       </div>
     </div>
     <div class="panel">
@@ -902,12 +913,19 @@ async function viewSettings(el) {
           <li>数据目录：<code>${esc(info.dataDir)}</code>（仅本机）</li>
           <li>平台：${esc(info.platform)} · 版本 v${esc(info.version)}</li>
           <li>删除人物档案时，其全部数据同步删除。</li>
+          ${info.corruptArchives ? `<li style="color:var(--accent-2)">⚠ 检测到 ${info.corruptArchives} 份损坏的档案文件，已隔离到数据目录的 corrupt/ 子目录（未删除），可手动查看或清理。</li>` : ''}
         </ul>
       </div>
       <div class="note warn mt8">红线：分析真实第三方涉及隐私，请勿导入你无权处理的对话；档案仅限本人查看，不对外共享，不用于伤害性用途；引擎内置拒绝操控类请求。</div>
     </div>
   `;
   $('#stProvider').onchange = () => $('#openaiCfg').classList.toggle('hidden', $('#stProvider').value !== 'openai');
+  $('#stClearKey') && ($('#stClearKey').onclick = async () => {
+    await H.settings.set({ apiKey: '' });
+    state.settings = await H.settings.get();
+    toast('已清除 API Key', 'ok');
+    viewSettings(el);
+  });
   $('#stSave').onclick = async () => {
     const patch = { provider: $('#stProvider').value };
     if (patch.provider === 'openai') {

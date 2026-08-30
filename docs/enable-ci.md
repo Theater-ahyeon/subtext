@@ -12,12 +12,12 @@ mkdir -p .github/workflows
 git mv ci/release.yml .github/workflows/release.yml
 git commit -m "ci: enable three-platform build workflow"
 
-# 3. 推送并重打 tag 触发构建
+# 3. 推送并打一个新 tag 触发构建（不要强推已发布的 v1.0.0）
 git push origin main
-git tag -f v1.0.0 && git push -f origin v1.0.0
+git tag v1.0.1 && git push origin v1.0.1
 ```
 
-tag 推送后 Actions 会自动：
+tag 推送后 Actions 会自动（CI 产物会挂到新 tag 的 Release，并生成 SHA256SUMS.txt 校验和）：
 1. 在 Windows / macOS / Ubuntu 三平台并行构建；
 2. 跑一遍单元测试；
 3. 把 `*.exe` / `*.dmg` / `*.AppImage` / `*.deb` / `*.zip` 全部挂到 v1.0.0 的 Release 页（Windows 包已在发布页，CI 会补充另外两个平台）。

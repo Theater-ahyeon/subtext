@@ -14,6 +14,9 @@ const MOCK_REPLY = {
     '- 连续性：本轮扮演与生境卡中的性情倾向一致，未出现性格漂移。',
     '- 变化性：对不同话题的回应体量有区分，未复读固定动作。',
     '- 迁移能力：面对卡片未覆盖的问题时，回复停留在试探而非编造往事，符合"留白"原则。',
+    '- 独立性：她有自己的事情线（工作压力），未完全围绕你的问题打转。',
+    '- 时间连续：动态状态（赶项目）被自然带入口吻，没有回到过时状态。',
+    '- 成长能力：面对你的道歉，她的回应比历史记录中的防御姿态略有松动，变化有依据。',
     '### 二、你的沟通复盘',
     '- 有效：开头直接说明来意，给了对方确定感。',
     '- 可改进：连续追问两件事，她只回应了第一件——一次一个问题是更稳的节奏。',
@@ -84,9 +87,10 @@ function normalizeBaseUrl(url) {
   // 带查询参数的地址（如 ?api-key=…）：路径补全后把查询串接回
   const qIdx = u.indexOf('?');
   let query = '';
-  if (qIdx !== -1) { query = u.slice(qIdx); u = u.slice(0, qIdx); }
+  if (qIdx !== -1) { query = u.slice(qIdx); u = u.slice(0, qIdx).replace(/\/+$/, ''); }
   let out;
   if (u.endsWith('/chat/completions')) out = u;
+  else if (u.endsWith('/openai')) out = u + '/chat/completions'; // Gemini OpenAI 兼容层
   else if (/\/v\d+(beta)?$/.test(u)) out = u + '/chat/completions';
   else out = u + '/v1/chat/completions';
   return out + query;
@@ -138,28 +142,30 @@ async function chat(settings, messages, opts = {}) {
   }
 }
 
-/** 从 LLM 文本中鲁棒地提取 JSON（容忍多个代码围栏与前后说明） */
+/** 从 LLM 文本中鲁棒地提取 JSON（容忍多个代码围栏与前后说明；后出现的候选优先——真实结果惯例在后，示例在前） */
 function extractJson(text) {
   if (!text) throw new Error('LLM 返回为空');
-  const tryParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
+  const tryParse = (s) => { try { const v = JSON.parse(s); return (v !== null && typeof v === 'object') ? v : null; } catch { return null; } };
   const candidates = [];
   const fenceRe = /```(?:json)?\s*([\s\S]*?)```/g;
   let m;
   while ((m = fenceRe.exec(text)) !== null) candidates.push(m[1].trim());
   candidates.push(text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
-  for (const c of candidates) {
-    const v = tryParse(c);
-    if (v !== null && typeof v === 'object') return v;
+  // 后→前尝试：模型常先回显格式示例再给真实结果
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const v = tryParse(candidates[i]);
+    if (v) return v;
   }
-  for (const c of candidates) {
-    const first = Math.min(...['{', '['].map(ch => { const i = c.indexOf(ch); return i === -1 ? Infinity : i; }));
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const c = candidates[i];
+    const first = Math.min(...['{', '['].map(ch => { const idx = c.indexOf(ch); return idx === -1 ? Infinity : idx; }));
     if (first === Infinity) continue;
     const open = c[first];
     const close = open === '{' ? '}' : ']';
     const last = c.lastIndexOf(close);
     if (last > first) {
       const v = tryParse(c.slice(first, last + 1));
-      if (v !== null) return v;
+      if (v) return v;
     }
   }
   throw new Error('LLM 返回的 JSON 无法解析：' + String(text).slice(0, 160));

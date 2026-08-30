@@ -160,7 +160,7 @@ function csvToItems(text) {
 
 // ---------- TXT ----------
 const TS_LINE = /^(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?)\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*(.*)$/;
-const TIME_ONLY = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+const TIME_ONLY = /^(?:上午|下午|中午|凌晨|晚上|早上|半夜|am|pm)?\s*\d{1,2}:\d{2}(?::\d{2})?$/i;
 
 function txtToItems(text) {
   const lines = text.split(/\r?\n/);
@@ -189,56 +189,96 @@ function txtToItems(text) {
   if (foundTs) return items;
 
   // ---- 无日期时间戳模式 ----
-  // 形态A（微信合并转发复制）：昵称行 + 纯时间行 + 内容行*，例如 "她\n12:05\n今天有点累"
+  // 形态A（微信合并转发复制）：昵称行 + 纯时间行 + 内容行*；同人多条时昵称可省略（仅时间行分隔）
   // 形态B：单行 "昵称：内容"
-  const wechatBlocks = detectWechatBlocks(lines);
-  if (wechatBlocks.length) {
-    for (const b of wechatBlocks) {
-      items.push({ ts: normTs(b.time), sender: b.sender, text: b.content.replace(/\s+$/, ''), isSelf: null, meta: {} });
+  const parsed = parseWechatFlow(lines);
+  if (parsed.messages.length) {
+    for (const b of parsed.messages) {
+      const content = Array.isArray(b.content) ? b.content.join('\n') : b.content;
+      items.push({ ts: normTs(b.time), sender: b.sender, text: String(content).replace(/\s+$/, ''), isSelf: null, meta: {} });
     }
+    // skipped 只统计未被任何形态消费的非空行
+    let nonEmpty = 0;
+    for (const l of lines) if (l.trim()) nonEmpty++;
+    parsed.stats.skipped = Math.max(0, nonEmpty - parsed.consumedNonEmpty);
     return items.filter(i => i.text);
   }
   for (const line of lines) {
     const kv = line.match(/^(.{1,32}?)[:：]\s*(.+)$/);
-    if (kv && !TIME_ONLY.test(kv[1].trim())) items.push({ ts: '', sender: kv[1].trim(), text: kv[2].trim(), isSelf: null, meta: {} });
+    if (kv && !TIME_ONLY.test(line.trim())) items.push({ ts: '', sender: kv[1].trim(), text: kv[2].trim(), isSelf: null, meta: {} });
   }
   return items;
 }
 
-/** 识别微信合并转发形态：短昵称行(≤32字,无冒号) + 纯时间行 + 内容行，直到下一个"昵称+时间"块 */
-function detectWechatBlocks(lines) {
+/**
+ * 微信合并转发形态解析（状态机）：
+ * - 进入条件：存在"昵称行 + 纯时间行"对（昵称 ≤32 字、无冒号；时间支持 上午/下午 等前缀）
+ * - 块内：新的纯时间行 = 同一发送者连发下一条；"昵称+时间行"对 = 换发送者
+ * - 首个块之前的区域仍按 "昵称：内容" 解析（混合文档）
+ * 返回 { messages: [{sender,time,content}], consumedNonEmpty, stats: {skipped} }
+ */
+function parseWechatFlow(lines) {
   const isNameLine = (s) => {
-    const t = s.trim();
-    return t && t.length <= 32 && !TIME_ONLY.test(t) && !/[:：]/.test(t) && !TS_LINE.test(t);
+    const t = String(s).trim();
+    return !!t && t.length <= 32 && !TIME_ONLY.test(t) && !/[:：]/.test(t) && !TS_LINE.test(t);
   };
-  const blocks = [];
-  for (let i = 0; i < lines.length; i++) {
-    const t = lines[i].trim();
-    if (!isNameLine(lines[i])) continue;
-    // 下一个非空行必须是纯时间行
-    let j = i + 1;
+  const nextNonEmpty = (i) => {
+    let j = i;
     while (j < lines.length && !lines[j].trim()) j++;
-    if (j >= lines.length || !TIME_ONLY.test(lines[j].trim())) continue;
-    const sender = t;
-    const time = lines[j].trim();
-    const contentLines = [];
-    let k = j + 1;
-    while (k < lines.length) {
-      const kt = lines[k].trim();
-      if (!kt) { k++; continue; }
-      // 下一个块的开头：昵称行 + 纯时间行
-      if (isNameLine(lines[k])) {
-        let m = k + 1;
-        while (m < lines.length && !lines[m].trim()) m++;
-        if (m < lines.length && TIME_ONLY.test(lines[m].trim())) break;
-      }
-      contentLines.push(lines[k]);
-      k++;
-    }
-    blocks.push({ sender, time, content: contentLines.join('\n') });
-    i = k - 1;
+    return j;
+  };
+  // 探测是否存在至少一个"昵称+时间"对
+  let hasBlock = false;
+  for (let i = 0; i < lines.length && !hasBlock; i++) {
+    if (!isNameLine(lines[i])) continue;
+    const j = nextNonEmpty(i + 1);
+    if (j < lines.length && TIME_ONLY.test(lines[j].trim())) hasBlock = true;
   }
-  return blocks;
+  if (!hasBlock) return { messages: [], consumedNonEmpty: 0, stats: { skipped: 0 } };
+
+  const messages = [];
+  const consumed = new Set();
+  // 首块之前的行：按 kv 解析
+  let start = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const j = nextNonEmpty(i + 1);
+    if (isNameLine(lines[i]) && j < lines.length && TIME_ONLY.test(lines[j].trim())) { start = i; break; }
+    const kv = lines[i].match(/^(.{1,32}?)[:：]\s*(.+)$/);
+    if (kv && !TIME_ONLY.test(lines[i].trim())) {
+      messages.push({ sender: kv[1].trim(), time: '', content: kv[2].trim() });
+      consumed.add(i);
+    }
+    start = i + 1;
+  }
+  // 块模式
+  let cur = null;
+  let i = start;
+  while (i < lines.length) {
+    const t = lines[i].trim();
+    if (!t) { i++; continue; }
+    if (TIME_ONLY.test(t)) {
+      if (cur && cur.content.join('').trim()) messages.push(cur);
+      cur = { sender: cur ? cur.sender : '', time: t, content: [] };
+      consumed.add(i);
+      i++;
+      continue;
+    }
+    if (isNameLine(lines[i])) {
+      const j = nextNonEmpty(i + 1);
+      if (j < lines.length && TIME_ONLY.test(lines[j].trim())) {
+        if (cur && cur.content.join('').trim()) messages.push(cur);
+        cur = { sender: t, time: lines[j].trim(), content: [] };
+        consumed.add(i); consumed.add(j);
+        i = j + 1;
+        continue;
+      }
+    }
+    if (cur) { cur.content.push(lines[i]); consumed.add(i); }
+    i++;
+  }
+  if (cur && cur.content.join('').trim()) messages.push(cur);
+  return { messages, consumedNonEmpty: consumed.size, stats: { skipped: 0 } };
 }
 
 /**

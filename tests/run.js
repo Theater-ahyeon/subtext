@@ -70,6 +70,26 @@ async function main() {
     assert.strictEqual(r.messages[1].sender, '我');
     assert.ok(!r.messages.some(m => m.text === '05'), '纯时间行不应被当成消息');
   });
+  await test('微信时间带 上午/下午 前缀 + 同人连发', () => {
+    const txt = '她\n下午2:05\n今天有点累\n她\n下午2:06\n嗯\n我\n下午2:07\n好的你休息';
+    const r = parser.parseAuto(txt, {});
+    assert.strictEqual(r.messages.length, 3, '连发内容不得丢失: ' + JSON.stringify(r.messages));
+    assert.strictEqual(r.messages[0].text, '今天有点累');
+    assert.strictEqual(r.messages[1].sender, '她');
+    assert.strictEqual(r.messages[1].text, '嗯');
+    assert.strictEqual(r.messages[2].sender, '我');
+  });
+  await test('混合文档：块前 kv 行保留', () => {
+    const txt = '备注：手工整理\n她\n12:05\n嗯';
+    const r = parser.parseAuto(txt, {});
+    assert.ok(r.messages.some(m => m.sender === '备注'), '块前的 kv 行应解析');
+    assert.ok(r.messages.some(m => m.sender === '她' && m.text === '嗯'));
+  });
+  await test('kv 兜底不把整行时间当消息', () => {
+    const r = parser.parseAuto('她：吃饭了吗\n12:05\n我：还没', {});
+    assert.ok(!r.messages.some(m => m.text === '05' || m.text === '12:05'), '裸时间行不得成为消息');
+    assert.strictEqual(r.messages.length, 2);
+  });
   await test('selfName 匹配标记本人', () => {
     const r = parser.parseAuto('小明：嗨\n她：嗨', { selfName: '小明' });
     assert.strictEqual(r.messages[0].isSelf, true);
@@ -130,14 +150,15 @@ async function main() {
     assert.ok(card.includes('往往先确认目的'));
     store.deletePerson(b.id);
   });
-  await test('compileCard：Q24 防误读按句边界截断且跳过"不知道"', () => {
+  await test('compileCard：Q24 补充背景按句边界截断且跳过"不知道"', () => {
     const b1 = store.createPerson('Q24a', '');
     b1.interview.records[24] = { qid: 24, question: '', answer: '不知道', probeAnswer: '', note: '' };
-    assert.ok(!P.compileCard(b1).includes('防误读重点'));
+    assert.ok(!P.compileCard(b1).includes('关于她的补充背景'));
     const b2 = store.createPerson('Q24b', '');
     b2.interview.records[24] = { qid: 24, question: '', answer: '别把她写成高冷。她话少是因为谨慎。' + '很长的补充。'.repeat(60), probeAnswer: '', note: '' };
     const card2 = P.compileCard(b2);
-    assert.ok(card2.includes('防误读重点'));
+    assert.ok(card2.includes('关于她的补充背景'), '中性呈现区块名');
+    assert.ok(!card2.includes('违反即失真'), '不得出现指令式框定（防数据升格为授权）');
     assert.ok(card2.includes('她话少是因为谨慎。'), '截断不应丢掉前句');
     store.deletePerson(b1.id); store.deletePerson(b2.id);
   });
@@ -162,12 +183,17 @@ async function main() {
     assert.deepStrictEqual(extractJson('```json\n{"a":1}\n```'), { a: 1 });
     assert.deepStrictEqual(extractJson('好的，结果如下：[1,2,3]'), [1, 2, 3]);
     assert.deepStrictEqual(extractJson('{"a":{"b":"}"}}'), { a: { b: '}' } });
+    // 多围栏：真实结果在后，示例占位在前 —— 必须取后者
+    const multi = '下面是输出格式示例：\n```json\n{"verdict":"hit","analysis":"示例占位"}\n```\n真实结果：\n```json\n{"verdict":"miss","analysis":"真正的分析"}\n```';
+    assert.deepStrictEqual(extractJson(multi), { verdict: 'miss', analysis: '真正的分析' });
     assert.throws(() => extractJson('完全没有JSON'));
   });
   await test('normalizeBaseUrl', () => {
     assert.strictEqual(normalizeBaseUrl('https://x.com'), 'https://x.com/v1/chat/completions');
     assert.strictEqual(normalizeBaseUrl('https://x.com/v1'), 'https://x.com/v1/chat/completions');
     assert.strictEqual(normalizeBaseUrl('https://x.com/v1/chat/completions/'), 'https://x.com/v1/chat/completions');
+    assert.strictEqual(normalizeBaseUrl('https://gw.example.com/v1/?api-key=K'), 'https://gw.example.com/v1/chat/completions?api-key=K');
+    assert.strictEqual(normalizeBaseUrl('https://generativelanguage.googleapis.com/v1beta/openai'), 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
   });
 
   console.log('== pipeline（mock provider 全流程） ==');
@@ -223,18 +249,35 @@ async function main() {
     try { await pipeline.submitFeedback(store2, bundle, SETTINGS, { predictionId: 'not-exists', raw: 'x' }); } catch { threw2 = true; }
     assert.ok(threw2, '无效预测单应报错');
   });
-  await test('归因撤销：恢复卡片到归因前状态', async () => {
+  await test('归因撤销：恢复卡片到归因前状态，闭环不超 100%', async () => {
     const { session } = await pipeline.startSession(store2, bundle, SETTINGS, '撤回测试');
     const pred = await pipeline.freezePrediction(store2, bundle, SETTINGS, session.id);
     const nBefore = bundle.claims.length;
     const { record } = await pipeline.submitFeedback(store2, bundle, SETTINGS, { predictionId: pred.id, raw: '她主动帮我了' });
-    const added = record.updates.filter(u => u.action === 'add').length;
     const reverted = pipeline.undoAttribution(store2, bundle, record.id);
     assert.strictEqual(bundle.claims.length, nBefore, '撤销后应恢复条目数');
     assert.strictEqual(bundle.predictions.find(p => p.id === pred.id).status, 'open', '预测单应回到待回流');
+    // 撤销后重交：闭环率不得超 100%（feedback 退出分子后再计入一次）
+    const { record: r2 } = await pipeline.submitFeedback(store2, bundle, SETTINGS, { predictionId: pred.id, raw: '她主动帮我了（再次）' });
+    const stats = store2.computeStats(bundle);
+    assert.ok(stats.loopCompletion <= 1, `loopCompletion 应 ≤ 100%，实际 ${stats.loopCompletion}`);
+    assert.ok(stats.linkedFeedbacks <= stats.predictions);
     let threw = false;
     try { pipeline.undoAttribution(store2, bundle, record.id); } catch { threw = true; }
     assert.ok(threw, '不能重复撤销');
+  });
+  await test('访谈写入一律以推断层级落库（用户陈述无事实地位）', async () => {
+    const b = store2.createPerson('访谈层', '');
+    b.interview.suggestions = [
+      { layer: 'temperament', text: '重视约定，认定的责任不会轻易放下', kind: 'fact', written: false },
+      { layer: 'life', text: '可能对临时变动敏感', kind: 'inference', written: false },
+    ];
+    pipeline.interviewWriteClaims(store2, b, [0, 1]);
+    assert.ok(b.claims.every(c => c.source !== 'user' || c.epistemic === 'inference'), '用户陈述不得为 fact');
+    // 非法索引不污染
+    pipeline.interviewWriteClaims(store2, b, ['__proto__', -1, 99]);
+    assert.strictEqual(b.claims.length, 2);
+    store2.deletePerson(b.id);
   });
   await test('24问访谈：回答 → 追问 → 跳过 → 终结 → 写入', async () => {
     const r1 = await pipeline.interviewAnswer(store2, bundle, SETTINGS, { qid: 1, answer: '她一个人也能站得很稳', skipped: false });
