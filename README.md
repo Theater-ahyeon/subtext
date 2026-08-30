@@ -129,6 +129,7 @@ contextIsolation + 无 nodeIntegration + CSP（script-src 'self'）· IPC id 严
 - [docs/formats.md](docs/formats.md) —— 支持的聊天导出格式对照
 - [docs/round-00-setup.md](docs/round-00-setup.md) → [round-05-release.md](docs/round-05-release.md) —— 每轮开发进度
 - [docs/round-03-adversarial-review.md](docs/round-03-adversarial-review.md) —— 对抗式审查与第一性原理修复
+- [docs/enable-ci.md](docs/enable-ci.md) —— 启用三平台 CI 构建（三条命令）
 - [CHANGELOG.md](CHANGELOG.md)
 
 ## 许可

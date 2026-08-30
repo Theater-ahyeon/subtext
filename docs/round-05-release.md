@@ -19,7 +19,15 @@
 
 - 仓库：`github.com/Theater-ahyeon/habitat-sandbox`（public）
 - 提交历史按轮次组织（round-00 → round-05），关键轮次打 tag：`v0.1.0-mvp` → `v0.2.0` → `v0.2.1` → `v1.0.0`
-- 推送 tag 后 CI 自动构建三平台安装包并挂到 Release（见 Actions 页）
+- Release：Windows 安装包（NSIS + 便携 zip）由本地构建并直接上传到 Release 页
+
+## 已知偏差：CI workflow 暂存于 ci/ 目录
+
+创建仓库的 OAuth token 只有 `repo` scope，GitHub 拒绝推送 `.github/workflows/` 下的文件（需要 `workflow` scope，补授权需要浏览器交互，本会话无人值守无法完成）。处理方式：
+
+- workflow 完整保留在 [`ci/release.yml`](../ci/release.yml)
+- 启用步骤见 [`docs/enable-ci.md`](enable-ci.md)（三条命令：补授权 → git mv → 重推 tag）
+- 启用后 CI 自动补齐 macOS dmg（x64+arm64）与 Linux AppImage/deb 并挂到同一 Release
 
 ## 验收清单（醒来后可核对）
 
