@@ -1,6 +1,6 @@
 {
   "name": "habitat-sandbox",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "生境沙盒 Habitat Sandbox — 基于 AIRP 人物生境写法的社交演练沙盒：数字孪生 + 预测校准闭环，本地优先。",
   "main": "src/main/main.js",
   "author": "Theater-ahyeon",

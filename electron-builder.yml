@@ -1,0 +1,49 @@
+appId: com.habitat.sandbox
+productName: Habitat Sandbox
+copyright: Copyright © 2026 Theater-ahyeon (MIT)
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - src/**/*
+  - package.json
+  - "!**/*.map"
+  - "!docs/**"
+  - "!tests/**"
+
+asar: true
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 生境沙盒
+  uninstallDisplayName: 生境沙盒 Habitat Sandbox
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.social-networking
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  identity: null
+
+linux:
+  icon: build/icon.png
+  category: Utility
+  maintainer: theater-ahyeon
+  target:
+    - AppImage
+    - deb
