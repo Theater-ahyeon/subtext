@@ -15,11 +15,11 @@ const CONTENT_KEYS = ['msg', 'message', 'content', 'text', 'strcontent', 'msgcon
 const SELF_KEYS = ['is_sender', 'issender', 'isself', 'self', 'isme', 'is_send'];
 
 function pickField(obj, keys) {
-  const lower = {};
+  const lower = Object.create(null); // 防原型污染：__proto__ 键退化为普通自有键
   for (const k of Object.keys(obj)) lower[k.toLowerCase().replace(/[_\s-]/g, '')] = obj[k];
   for (const key of keys) {
     const kk = key.replace(/[_\s-]/g, '');
-    if (lower[kk] !== undefined && lower[kk] !== null && lower[kk] !== '') return lower[kk];
+    if (Object.hasOwn(lower, kk) && lower[kk] !== undefined && lower[kk] !== null && lower[kk] !== '') return lower[kk];
   }
   return undefined;
 }
@@ -160,6 +160,7 @@ function csvToItems(text) {
 
 // ---------- TXT ----------
 const TS_LINE = /^(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日]?)\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*(.*)$/;
+const TIME_ONLY = /^\d{1,2}:\d{2}(?::\d{2})?$/;
 
 function txtToItems(text) {
   const lines = text.split(/\r?\n/);
@@ -182,18 +183,62 @@ function txtToItems(text) {
       cur = { ts: normTs(m[1].replace(/[年月]/g, '-').replace(/[日]/g, '') + ' ' + m[2]), sender, text: body, isSelf, meta: {} };
     } else if (cur) {
       cur.text = (cur.text ? cur.text + '\n' : '') + line;
-    } else {
-      // 无时间戳模式："昵称：内容" / "昵称: 内容"
-      const kv = line.match(/^(.{1,32}?)[:：]\s*(.+)$/);
-      if (kv) items.push({ ts: '', sender: kv[1].trim(), text: kv[2].trim(), isSelf: null, meta: {} });
     }
   }
   flush();
-  if (!foundTs) {
-    // 若完全无时间戳，过滤掉疑似标题噪声的短行
-    return items.filter(i => i.text && i.text.length >= 1);
+  if (foundTs) return items;
+
+  // ---- 无日期时间戳模式 ----
+  // 形态A（微信合并转发复制）：昵称行 + 纯时间行 + 内容行*，例如 "她\n12:05\n今天有点累"
+  // 形态B：单行 "昵称：内容"
+  const wechatBlocks = detectWechatBlocks(lines);
+  if (wechatBlocks.length) {
+    for (const b of wechatBlocks) {
+      items.push({ ts: normTs(b.time), sender: b.sender, text: b.content.replace(/\s+$/, ''), isSelf: null, meta: {} });
+    }
+    return items.filter(i => i.text);
+  }
+  for (const line of lines) {
+    const kv = line.match(/^(.{1,32}?)[:：]\s*(.+)$/);
+    if (kv && !TIME_ONLY.test(kv[1].trim())) items.push({ ts: '', sender: kv[1].trim(), text: kv[2].trim(), isSelf: null, meta: {} });
   }
   return items;
+}
+
+/** 识别微信合并转发形态：短昵称行(≤32字,无冒号) + 纯时间行 + 内容行，直到下一个"昵称+时间"块 */
+function detectWechatBlocks(lines) {
+  const isNameLine = (s) => {
+    const t = s.trim();
+    return t && t.length <= 32 && !TIME_ONLY.test(t) && !/[:：]/.test(t) && !TS_LINE.test(t);
+  };
+  const blocks = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (!isNameLine(lines[i])) continue;
+    // 下一个非空行必须是纯时间行
+    let j = i + 1;
+    while (j < lines.length && !lines[j].trim()) j++;
+    if (j >= lines.length || !TIME_ONLY.test(lines[j].trim())) continue;
+    const sender = t;
+    const time = lines[j].trim();
+    const contentLines = [];
+    let k = j + 1;
+    while (k < lines.length) {
+      const kt = lines[k].trim();
+      if (!kt) { k++; continue; }
+      // 下一个块的开头：昵称行 + 纯时间行
+      if (isNameLine(lines[k])) {
+        let m = k + 1;
+        while (m < lines.length && !lines[m].trim()) m++;
+        if (m < lines.length && TIME_ONLY.test(lines[m].trim())) break;
+      }
+      contentLines.push(lines[k]);
+      k++;
+    }
+    blocks.push({ sender, time, content: contentLines.join('\n') });
+    i = k - 1;
+  }
+  return blocks;
 }
 
 /**

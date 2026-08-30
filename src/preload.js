@@ -26,7 +26,17 @@ contextBridge.exposeInMainWorld('habitat', {
     file: (p) => invoke('import:file', p),
   },
   card: {
-    induce: (p) => invoke('card:induce', p),
+    induce: (p, onProgress) => new Promise((resolve, reject) => {
+      const listener = (e, prog) => { if (onProgress) try { onProgress(prog); } catch {} };
+      ipcRenderer.on('induce:progress', listener);
+      ipcRenderer.invoke('card:induce', p).then(r => {
+        ipcRenderer.removeListener('induce:progress', listener);
+        if (r && r.ok) resolve(r.data); else reject(new Error((r && r.error) || '归纳失败'));
+      }).catch(err => {
+        ipcRenderer.removeListener('induce:progress', listener);
+        reject(err);
+      });
+    }),
     compile: (p) => invoke('card:compile', p),
     addClaim: (p) => invoke('claims:add', p),
     updateClaim: (p) => invoke('claims:update', p),
@@ -48,11 +58,13 @@ contextBridge.exposeInMainWorld('habitat', {
     predictions: (p) => invoke('prediction:list', p),
     feedback: (p) => invoke('feedback:submit', p),
     attributions: (p) => invoke('attribution:list', p),
+    undo: (p) => invoke('attribution:undo', p),
   },
   stats: (p) => invoke('stats:get', p),
   radar: (p) => invoke('radar:get', p),
   interview: {
     state: (p) => invoke('interview:state', p),
+    start: (p) => invoke('interview:start', p),
     answer: (p) => invoke('interview:answer', p),
     probeAnswer: (p) => invoke('interview:probeAnswer', p),
     summary: (p) => invoke('interview:summary', p),

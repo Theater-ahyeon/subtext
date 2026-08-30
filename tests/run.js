@@ -61,6 +61,15 @@ async function main() {
     assert.strictEqual(r.messages[0].sender, '她');
     assert.strictEqual(r.messages[1].isSelf, true);
   });
+  await test('微信合并转发 TXT 解析（昵称行 + 纯时间行 + 内容）', () => {
+    const txt = '她\n12:05\n今天有点累，回头说\n\n我\n12:07\n好的你休息';
+    const r = parser.parseAuto(txt, {});
+    assert.strictEqual(r.messages.length, 2);
+    assert.strictEqual(r.messages[0].sender, '她');
+    assert.strictEqual(r.messages[0].text, '今天有点累，回头说');
+    assert.strictEqual(r.messages[1].sender, '我');
+    assert.ok(!r.messages.some(m => m.text === '05'), '纯时间行不应被当成消息');
+  });
   await test('selfName 匹配标记本人', () => {
     const r = parser.parseAuto('小明：嗨\n她：嗨', { selfName: '小明' });
     assert.strictEqual(r.messages[0].isSelf, true);
@@ -109,13 +118,28 @@ async function main() {
     store.addClaim(b, { layer: 'basic', text: '24岁', epistemic: 'fact', source: 'user', confidence: 0.9 });
     store.addClaim(b, { layer: 'temperament', text: '往往先确认目的', epistemic: 'inference', source: 'ai', confidence: 0.6 });
     store.addClaim(b, { layer: 'life', text: '未知作息', epistemic: 'blank', source: 'ai', confidence: 0 });
+    store.addClaim(b, { layer: 'life', text: '低置信到近乎弃用的条目', epistemic: 'inference', source: 'ai', confidence: 0.1 });
     const card = P.compileCard(b);
     assert.ok(card.includes('【基础信息】'));
     assert.ok(card.includes('【人物性情】'));
+    assert.ok(card.includes('[事实]'), '层级标注应进卡');
+    assert.ok(card.includes('[推断]'));
     assert.ok(!card.includes('【生活结构】'), '空层应整段删除');
     assert.ok(!card.includes('未知作息'), '空白条目不应进卡');
+    assert.ok(!card.includes('低置信到近乎弃用'), '置信度<0.3 的条目不应进卡');
     assert.ok(card.includes('往往先确认目的'));
     store.deletePerson(b.id);
+  });
+  await test('compileCard：Q24 防误读按句边界截断且跳过"不知道"', () => {
+    const b1 = store.createPerson('Q24a', '');
+    b1.interview.records[24] = { qid: 24, question: '', answer: '不知道', probeAnswer: '', note: '' };
+    assert.ok(!P.compileCard(b1).includes('防误读重点'));
+    const b2 = store.createPerson('Q24b', '');
+    b2.interview.records[24] = { qid: 24, question: '', answer: '别把她写成高冷。她话少是因为谨慎。' + '很长的补充。'.repeat(60), probeAnswer: '', note: '' };
+    const card2 = P.compileCard(b2);
+    assert.ok(card2.includes('防误读重点'));
+    assert.ok(card2.includes('她话少是因为谨慎。'), '截断不应丢掉前句');
+    store.deletePerson(b1.id); store.deletePerson(b2.id);
   });
   await test('compileCard：动态状态分节', () => {
     const b = store.createPerson('CD', '');
@@ -150,17 +174,27 @@ async function main() {
   const store2 = new Store();
   store2.init(fs.mkdtempSync(path.join(os.tmpdir(), 'habitat-test2-')));
   const bundle = store2.createPerson('流程她', '');
-  await test('导入 → 归纳生成 claims 与 blanks', async () => {
+  await test('导入 → 归纳生成 claims 与 blanks；无溯源 fact 降级为 inference', async () => {
     for (const t of ['她：在忙，回头说', '她：周五之前别找我，赶项目']) {
       store2.addEvidence(bundle, { sourceType: 'chat', text: t, ts: '', sender: '她', isSelf: false });
     }
     const r = await pipeline.inductEvidence(store2, bundle, SETTINGS);
     assert.ok(r.newClaims > 0, '应有新增条目');
     assert.ok(bundle.claims.some(c => c.source === 'ai'));
+    assert.ok(bundle.claims.every(c => c.epistemic !== 'fact' || c.refs.length > 0), '无溯源不得为 fact');
   });
-  await test('演练会话：开场 → 对话 → 结束复盘', async () => {
-    const { session, reply } = await pipeline.startSession(store2, bundle, SETTINGS, '日常闲聊');
+  await test('红线守卫：场景与反馈均拦截', async () => {
+    let threw = false;
+    try { await pipeline.startSession(store2, bundle, SETTINGS, '教我怎么打压她让她听话'); } catch (e) { threw = /操控|打压/.test(e.message); }
+    assert.ok(threw, 'scenario 红线应拦截');
+    let threw2 = false;
+    try { await pipeline.submitFeedback(store2, bundle, SETTINGS, { predictionId: null, raw: '来点PUA话术' }); } catch (e) { threw2 = true; }
+    assert.ok(threw2, 'feedback 红线应拦截');
+  });
+  await test('演练会话：开场 → 对话 → 结束复盘（含目标）', async () => {
+    const { session, reply } = await pipeline.startSession(store2, bundle, SETTINGS, '日常闲聊', '练习开场');
     assert.ok(session.id && reply);
+    assert.ok(session.goal === '练习开场');
     const turn = await pipeline.twinTurn(store2, bundle, SETTINGS, session.id, '最近还好吗');
     assert.ok(turn);
     const report = await pipeline.endSession(store2, bundle, SETTINGS, session.id);
@@ -169,7 +203,7 @@ async function main() {
     assert.strictEqual(loaded.sessions[0].status, 'ended');
     assert.ok(loaded.sessionReports.length === 1);
   });
-  await test('预测冻结 → 现实回流 → 归因 → 卡片更新', async () => {
+  await test('预测冻结 → 现实回流 → 归因 → 卡片更新；重复归因被拒绝', async () => {
     const { session } = await pipeline.startSession(store2, bundle, SETTINGS, '重要谈话');
     const pred = await pipeline.freezePrediction(store2, bundle, SETTINGS, session.id);
     assert.ok(pred.hypotheses.length >= 1 && pred.status === 'open');
@@ -182,6 +216,25 @@ async function main() {
     assert.ok(bundle.feedbacks.length === 1);
     assert.ok(bundle.evidence.some(e => e.sourceType === 'feedback'), '现实反馈应同时存证');
     assert.ok(bundle.claims.length >= nBefore, '归因可新增条目');
+    let threw = false;
+    try { await pipeline.submitFeedback(store2, bundle, SETTINGS, { predictionId: pred.id, raw: '再交一次' }); } catch (e) { threw = /已归因/.test(e.message); }
+    assert.ok(threw, '重复归因应被拒绝');
+    let threw2 = false;
+    try { await pipeline.submitFeedback(store2, bundle, SETTINGS, { predictionId: 'not-exists', raw: 'x' }); } catch { threw2 = true; }
+    assert.ok(threw2, '无效预测单应报错');
+  });
+  await test('归因撤销：恢复卡片到归因前状态', async () => {
+    const { session } = await pipeline.startSession(store2, bundle, SETTINGS, '撤回测试');
+    const pred = await pipeline.freezePrediction(store2, bundle, SETTINGS, session.id);
+    const nBefore = bundle.claims.length;
+    const { record } = await pipeline.submitFeedback(store2, bundle, SETTINGS, { predictionId: pred.id, raw: '她主动帮我了' });
+    const added = record.updates.filter(u => u.action === 'add').length;
+    const reverted = pipeline.undoAttribution(store2, bundle, record.id);
+    assert.strictEqual(bundle.claims.length, nBefore, '撤销后应恢复条目数');
+    assert.strictEqual(bundle.predictions.find(p => p.id === pred.id).status, 'open', '预测单应回到待回流');
+    let threw = false;
+    try { pipeline.undoAttribution(store2, bundle, record.id); } catch { threw = true; }
+    assert.ok(threw, '不能重复撤销');
   });
   await test('24问访谈：回答 → 追问 → 跳过 → 终结 → 写入', async () => {
     const r1 = await pipeline.interviewAnswer(store2, bundle, SETTINGS, { qid: 1, answer: '她一个人也能站得很稳', skipped: false });

@@ -25,7 +25,7 @@ function evidenceLine(e) {
 async function inductEvidence(store, bundle, settings, { onProgress } = {}) {
   const chunks = chunkEvidence(bundle);
   if (!chunks.length) throw new Error('暂无素材，请先导入聊天记录或添加证据');
-  let newClaims = 0, blanks = [];
+  let newClaims = 0, mergedDups = 0, blanks = [];
   for (let i = 0; i < chunks.length; i++) {
     if (onProgress) onProgress({ step: i + 1, total: chunks.length });
     const existing = bundle.claims.filter(c => c.epistemic !== 'blank').map(c => `- [${P.LAYER_NAMES[c.layer]}] ${c.text}`).join('\n');
@@ -35,32 +35,41 @@ async function inductEvidence(store, bundle, settings, { onProgress } = {}) {
     const idBySeq = new Map(chunks[i].map(e => ['E' + e.seq, e.id]));
     for (const c of (parsed.claims || []).slice(0, 8)) {
       if (!c || !c.text || !P.LAYER_NAMES[c.layer]) continue;
-      const text = String(c.text).slice(0, 200);
-      // 简单去重：与现有条目高度相似的跳过
-      const dup = bundle.claims.some(x => similar(x.text, text));
-      if (dup) continue;
+      const text = clampText(c.text, 200);
       const refs = (Array.isArray(c.refs) ? c.refs : []).map(r => idBySeq.get(String(r).toUpperCase())).filter(Boolean);
+      // 证据链纪律：无溯源引用的条目不得以"事实"入库（防提示注入伪造事实）
+      const epistemic = (c.epistemic === 'fact' && refs.length) ? 'fact' : 'inference';
+      const dup = bundle.claims.find(x => similar(x.text, text) && x.epistemic !== 'blank');
+      if (dup) {
+        // 重复不丢弃而是合并：跨场景复现提升置信度并留痕
+        dup.confidence = clamp01(Math.max(dup.confidence || 0, Number(c.confidence) || 0.5) + 0.05);
+        if (!/复现于新素材/.test(dup.note || '')) dup.note = (dup.note ? dup.note + ' | ' : '') + '复现于新素材';
+        dup.updatedAt = new Date().toISOString();
+        mergedDups++;
+        continue;
+      }
       bundle.claims.push({
         id: require('./store').uid(), layer: c.layer, text,
-        epistemic: c.epistemic === 'fact' ? 'fact' : 'inference',
-        source: 'ai', refs, confidence: clamp01(c.confidence), note: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        epistemic, source: 'ai', refs, confidence: clamp01(c.confidence),
+        note: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       });
       newClaims++;
     }
     if (Array.isArray(parsed.blanks)) {
       for (const b of parsed.blanks.slice(0, 6)) {
-        const text = String(b).slice(0, 120);
+        const text = clampText(typeof b === 'string' ? b : b && b.text, 120);
         if (!text) continue;
+        const layer = (typeof b === 'object' && b && P.LAYER_NAMES[b.layer]) ? b.layer : 'life';
         if (bundle.claims.some(x => similar(x.text, text))) continue;
         bundle.claims.push({
-          id: require('./store').uid(), layer: 'life', text,
+          id: require('./store').uid(), layer, text,
           epistemic: 'blank', source: 'ai', refs: [], confidence: 0, note: '待了解', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
         });
       }
     }
     store.savePerson(bundle);
   }
-  return { newClaims, total: bundle.claims.length, chunks: chunks.length };
+  return { newClaims, mergedDups, total: bundle.claims.length, chunks: chunks.length };
 }
 
 function similar(a, b) {
@@ -83,9 +92,12 @@ function clamp01(v) {
   return Math.min(1, Math.max(0, n));
 }
 
+const clampText = (v, n) => String(v == null ? '' : v).slice(0, n);
+
 // ---------- 演练 ----------
-async function startSession(store, bundle, settings, scenario) {
-  const session = { id: require('./store').uid(), scenario: scenario || '', status: 'active', createdAt: new Date().toISOString(), endedAt: null, messages: [] };
+async function startSession(store, bundle, settings, scenario, goal) {
+  if (P.redlineCheck(scenario || '')) throw new Error('场景包含操控/打压/伤害类内容，本工具不提供此类演练。请改写为中性情境描述，例如"你们因小事冷战三天，你想修复关系"。');
+  const session = { id: require('./store').uid(), scenario: clampText(scenario, 2000), goal: clampText(goal, 2000), status: 'active', createdAt: new Date().toISOString(), endedAt: null, messages: [] };
   bundle.sessions.push(session);
   const sys = P.twinSystemPrompt(bundle, session.scenario);
   const reply = await chat(settings, [
@@ -102,9 +114,15 @@ async function twinTurn(store, bundle, settings, sessionId, userText) {
   const session = bundle.sessions.find(s => s.id === sessionId);
   if (!session) throw new Error('演练会话不存在');
   if (session.status !== 'active') throw new Error('该演练已结束');
-  session.messages.push({ role: 'user', content: userText, ts: new Date().toISOString() });
+  if (P.redlineCheck(userText)) {
+    const err = new Error('REDLINE');
+    err.blocked = '[系统提示] 这个请求涉及操控、打压或伤害性策略，本工具不提供。演练的目的是帮你更好地理解与表达自己——比如如何诚实地说出你的需求，或如何接住对方的拒绝。';
+    throw err;
+  }
+  session.messages.push({ role: 'user', content: clampText(userText, 4000), ts: new Date().toISOString() });
   const sys = P.twinSystemPrompt(bundle, session.scenario);
-  const history = session.messages.map(m => ({ role: m.role === 'twin' ? 'assistant' : 'user', content: m.content }));
+  // 长会话轮换：只发最近 24 条，防止 token 失控（更早的上下文由生境卡承载）
+  const history = session.messages.slice(-24).map(m => ({ role: m.role === 'twin' ? 'assistant' : 'user', content: m.content }));
   const reply = await chat(settings, [{ role: 'system', content: sys }, ...history], { task: 'TWIN' });
   session.messages.push({ role: 'twin', content: reply, ts: new Date().toISOString() });
   store.savePerson(bundle);
@@ -125,7 +143,7 @@ async function endSession(store, bundle, settings, sessionId) {
   session.status = 'ended';
   session.endedAt = new Date().toISOString();
   const report = await chat(settings, [
-    { role: 'user', content: P.reviewPrompt(bundle, sessionTranscript(session)) },
+    { role: 'user', content: P.reviewPrompt(bundle, sessionTranscript(session), session.goal) },
   ], { task: 'REVIEW', temperature: settings.analysisTemperature });
   if (!bundle.sessionReports) bundle.sessionReports = [];
   bundle.sessionReports.push({ sessionId, report, ts: new Date().toISOString() });
@@ -144,42 +162,45 @@ async function freezePrediction(store, bundle, settings, sessionId) {
   const prediction = {
     id: require('./store').uid(), sessionId,
     hypotheses: (parsed.hypotheses || []).map(h => ({
-      text: String(h.text || ''), prob: clamp01(h.prob), basis: String(h.basis || ''), verify: String(h.verify || ''),
+      text: clampText(h.text, 300), prob: clamp01(h.prob),
+      basis: clampText(h.basis, 300), verify: clampText(h.verify, 300),
     })).filter(h => h.text),
-    expected: String(parsed.expected || ''),
+    expected: clampText(parsed.expected, 500),
     frozenAt: new Date().toISOString(), status: 'open',
   };
+  if (!prediction.hypotheses.length) throw new Error('未能生成有效假设（模型返回为空），请重试');
   bundle.predictions.push(prediction);
   store.savePerson(bundle);
   return prediction;
 }
 
 async function submitFeedback(store, bundle, settings, { predictionId, raw }) {
-  const feedback = { id: require('./store').uid(), predictionId: predictionId || null, sessionId: null, raw, createdAt: new Date().toISOString() };
+  if (P.redlineCheck(raw)) throw new Error('反馈内容包含操控/伤害类描述，本工具不处理这类内容');
+  const text = clampText(raw, 4000);
+  let pred = null;
   if (predictionId) {
-    const pred = bundle.predictions.find(p => p.id === predictionId);
-    if (pred) {
-      pred.status = 'attributed';
-      feedback.sessionId = pred.sessionId;
-    }
+    pred = bundle.predictions.find(p => p.id === predictionId);
+    if (!pred) throw new Error('预测单不存在');
+    if (pred.status !== 'open') throw new Error('该预测单已归因过，请刷新页面');
   }
+  const feedback = { id: require('./store').uid(), predictionId: predictionId || null, sessionId: pred ? pred.sessionId : null, raw: text, createdAt: new Date().toISOString() };
+  if (pred) pred.status = 'attributed';
   // 现实反应本身也是证据
-  store.addEvidence(bundle, { sourceType: 'feedback', text: raw, ts: new Date().toISOString(), sender: bundle.name, isSelf: false });
+  store.addEvidence(bundle, { sourceType: 'feedback', text, ts: new Date().toISOString(), sender: bundle.name, isSelf: false });
   let transcript = '';
   if (feedback.sessionId) {
     const session = bundle.sessions.find(s => s.id === feedback.sessionId);
     if (session) transcript = sessionTranscript(session, 30);
   }
-  const pred = predictionId ? bundle.predictions.find(p => p.id === predictionId) : null;
   const rawAttr = await chat(settings, [
-    { role: 'user', content: P.attributionPrompt(bundle, pred, raw, transcript) },
+    { role: 'user', content: P.attributionPrompt(bundle, pred, text, transcript) },
   ], { task: 'ATTRIBUTION', temperature: settings.analysisTemperature });
   const attr = extractJson(rawAttr);
   const applied = applyUpdates(bundle, attr.updates || []);
   const record = {
     id: require('./store').uid(), feedbackId: feedback.id, predictionId: predictionId || null,
     verdict: ['hit', 'partial', 'miss', 'fact-error', 'material-missing', 'temperament-error', 'expression-error'].includes(attr.verdict) ? attr.verdict : 'miss',
-    analysis: String(attr.analysis || ''), updates: applied, createdAt: new Date().toISOString(),
+    analysis: clampText(attr.analysis, 2000), updates: applied, undone: false, createdAt: new Date().toISOString(),
   };
   bundle.attributions.push(record);
   bundle.feedbacks.push(feedback);
@@ -187,37 +208,42 @@ async function submitFeedback(store, bundle, settings, { predictionId, raw }) {
   return { record, applied };
 }
 
-/** 应用归因产生的卡片更新（最小修正，可解释可回滚——旧值进 note） */
+/** 应用归因产生的卡片更新（最小修正，记录旧值以便撤销） */
 function applyUpdates(bundle, updates) {
   const applied = [];
   for (const u of updates.slice(0, 6)) {
+    if (!u || typeof u !== 'object') continue;
     try {
       if (u.action === 'add' && u.text && P.LAYER_NAMES[u.layer]) {
-        const c = bundle.claims.find(x => similar(x.text, u.text));
-        if (!c) {
-          bundle.claims.push({
-            id: require('./store').uid(), layer: u.layer, text: String(u.text).slice(0, 200),
+        const text = clampText(u.text, 200);
+        const dup = bundle.claims.find(x => similar(x.text, text));
+        if (!dup) {
+          const claim = {
+            id: require('./store').uid(), layer: u.layer, text,
             epistemic: 'inference', source: 'ai', refs: [], confidence: 0.6,
-            note: '来自现实反馈归因: ' + String(u.reason || '').slice(0, 100),
+            note: '来自现实反馈归因: ' + clampText(u.reason, 100),
             createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-          });
-          applied.push({ action: 'add', layer: u.layer, text: u.text });
+          };
+          bundle.claims.push(claim);
+          applied.push({ action: 'add', claimId: claim.id, layer: u.layer, text });
         }
       } else if (u.action === 'update' && u.claimId && u.text) {
         const c = bundle.claims.find(x => x.id === u.claimId);
         if (c) {
+          const prevText = c.text;
           c.note = (c.note ? c.note + ' | ' : '') + `原: ${c.text}`;
-          c.text = String(u.text).slice(0, 200);
+          c.text = clampText(u.text, 200);
           c.updatedAt = new Date().toISOString();
-          applied.push({ action: 'update', claimId: c.id, text: c.text });
+          applied.push({ action: 'update', claimId: c.id, text: c.text, prevText });
         }
       } else if (u.action === 'deprecate' && u.claimId) {
         const c = bundle.claims.find(x => x.id === u.claimId);
         if (c) {
+          const prevConf = c.confidence;
           c.confidence = Math.max(0.05, (c.confidence || 0.5) - 0.3);
-          c.note = (c.note ? c.note + ' | ' : '') + '归因标记不可靠: ' + String(u.reason || '').slice(0, 100);
+          c.note = (c.note ? c.note + ' | ' : '') + '归因标记不可靠: ' + clampText(u.reason, 100);
           c.updatedAt = new Date().toISOString();
-          applied.push({ action: 'deprecate', claimId: c.id });
+          applied.push({ action: 'deprecate', claimId: c.id, prevConf });
         }
       }
     } catch { /* 单条更新失败不影响整体 */ }
@@ -225,12 +251,45 @@ function applyUpdates(bundle, updates) {
   return applied;
 }
 
-// ---------- 话题雷达（规则版：空白 + 待确认 → 可验证的问题） ----------
+/** 撤销一次归因对卡片的所有修改（决策权在用户） */
+function undoAttribution(store, bundle, attributionId) {
+  const record = bundle.attributions.find(a => a.id === attributionId);
+  if (!record) throw new Error('归因记录不存在');
+  if (record.undone) throw new Error('该归因已撤销过');
+  const reverted = [];
+  for (const u of (record.updates || [])) {
+    try {
+      if (u.action === 'add' && u.claimId) {
+        const before = bundle.claims.length;
+        bundle.claims = bundle.claims.filter(c => c.id !== u.claimId);
+        if (bundle.claims.length < before) reverted.push('删 ' + (u.text || '').slice(0, 20));
+      } else if (u.action === 'update' && u.claimId && u.prevText) {
+        const c = bundle.claims.find(x => x.id === u.claimId);
+        if (c) { c.text = u.prevText; c.updatedAt = new Date().toISOString(); reverted.push('还原 ' + u.prevText.slice(0, 20)); }
+      } else if (u.action === 'deprecate' && u.claimId && typeof u.prevConf === 'number') {
+        const c = bundle.claims.find(x => x.id === u.claimId);
+        if (c) { c.confidence = u.prevConf; reverted.push('恢复置信度 ' + c.text.slice(0, 20)); }
+      }
+    } catch { /* 单条撤销失败不影响其余 */ }
+  }
+  record.undone = true;
+  if (record.predictionId) {
+    const pred = bundle.predictions.find(p => p.id === record.predictionId);
+    if (pred) pred.status = 'open';
+  }
+  store.savePerson(bundle);
+  return reverted;
+}
+
+// ---------- 话题雷达（规则版：空白 + 用户陈述待验证 + 访谈待确认） ----------
 function topicRadar(bundle) {
-  const blanks = bundle.claims.filter(c => c.epistemic === 'blank').slice(0, 12);
-  const items = blanks.map(c => ({ from: '生境卡空白', text: c.text }));
-  if (bundle.interview && Array.isArray(bundle.interview.suggestions)) {
-    // final 中"仍待确认"的问题不结构化存储，用 records 中标注暂未确定的
+  const items = [];
+  for (const c of bundle.claims.filter(c => c.epistemic === 'blank').slice(0, 12)) {
+    items.push({ from: '生境卡空白', text: c.text });
+  }
+  // 兑现"用户陈述优先被现实验证"的承诺：无证据引用的用户陈述列入待验证
+  for (const c of bundle.claims.filter(c => c.source === 'user' && !c.refs.length && c.epistemic !== 'blank').slice(0, 8)) {
+    items.push({ from: '用户陈述·待验证', text: c.text });
   }
   for (const [qid, r] of Object.entries(bundle.interview.records || {})) {
     const note = r.note || '';
@@ -265,15 +324,16 @@ async function interviewAnswer(store, bundle, settings, { qid, answer, skipped }
     store.savePerson(bundle);
     return { record, nextQ: iv.currentQ, probe: null };
   }
-  record.answer = answer;
+  record.answer = clampText(answer, 4000);
   // 判断是否需要追问
   let probe = null;
   const digest = recordsDigest(Object.assign({}, iv.records, { [qid]: record }));
   const raw = await chat(settings, [
-    { role: 'user', content: P.interviewProbePrompt(qid, q.text, answer, digest) },
+    { role: 'user', content: P.interviewProbePrompt(qid, q.text, record.answer, digest) },
   ], { task: 'INTERVIEW_PROBE', temperature: settings.analysisTemperature });
   const cleaned = raw.trim();
-  if (cleaned && !/^ok$/i.test(cleaned)) probe = cleaned.slice(0, 300);
+  const isOk = /^(ok|okay|好[的呀]?|可以|通过|fine|no[_ ]?need)\s*[。.!！]?$/i.test(cleaned);
+  if (cleaned && !isOk) probe = clampText(cleaned, 300);
   record.probe = probe;
   iv.records[qid] = record;
   if (!probe) iv.currentQ = nextQ(iv);
@@ -329,7 +389,7 @@ async function interviewFinalize(store, bundle, settings) {
   return { final: bundle.interview.final, suggestions: bundle.interview.suggestions };
 }
 
-/** 将勾选的访谈建议写入生境卡（来源=用户陈述） */
+/** 将勾选的访谈建议写入生境卡（来源=用户陈述，标注"待验证"） */
 function interviewWriteClaims(store, bundle, indexes) {
   const written = [];
   for (const i of indexes) {
@@ -339,9 +399,10 @@ function interviewWriteClaims(store, bundle, indexes) {
     if (dup) { s.written = true; continue; }
     bundle.claims.push({
       id: require('./store').uid(), layer: s.layer, text: s.text,
+      // 用户陈述不享有证据事实地位：即使 kind=fact 也以"用户陈述"来源与待验证 note 落库
       epistemic: s.kind === 'fact' ? 'fact' : 'inference', source: 'user', refs: [],
-      confidence: s.kind === 'fact' ? 0.85 : 0.6,
-      note: '来自24问访谈', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      confidence: s.kind === 'fact' ? 0.7 : 0.6,
+      note: '来自24问访谈 · 用户陈述·待验证', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     });
     s.written = true;
     written.push(s.text);
@@ -352,7 +413,7 @@ function interviewWriteClaims(store, bundle, indexes) {
 
 module.exports = {
   inductEvidence, startSession, twinTurn, endSession, sessionTranscript,
-  freezePrediction, submitFeedback, applyUpdates, topicRadar,
+  freezePrediction, submitFeedback, applyUpdates, undoAttribution, topicRadar,
   interviewAnswer, interviewProbeAnswer, interviewSummary, interviewFinalize, interviewWriteClaims,
   chunkEvidence, evidenceLine, similar, clamp01,
 };

@@ -2,10 +2,12 @@
 /**
  * Electron 主进程：窗口 + IPC 编排。
  * 所有业务逻辑在 store/pipeline/parser/prompts（可在无 Electron 环境测试）。
+ * 安全基线：id 严格校验、单实例锁、导航/弹窗拦截、API Key 用 safeStorage(DPAPI) 加密。
  */
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const util = require('util');
 const { Store } = require('./store');
 const parser = require('./parser');
 const pipeline = require('./pipeline');
@@ -13,7 +15,18 @@ const P = require('./prompts');
 const { chat } = require('./llm');
 
 const store = new Store();
+const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 let win = null;
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+  });
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -27,6 +40,11 @@ function createWindow() {
       nodeIntegration: false,
       spellcheck: false,
     },
+  });
+  // 渲染层被攻破时不允许导航或开新窗口
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('file://')) e.preventDefault();
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
@@ -46,18 +64,50 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
 // ---------- helpers ----------
+function validId(id) {
+  if (!ID_RE.test(String(id || ''))) throw new Error('非法的人物 id');
+  return String(id);
+}
+
 function withPerson(id, fn) {
-  const bundle = store.loadPerson(id);
+  const bundle = store.loadPerson(validId(id));
   if (!bundle) throw new Error('人物不存在');
   return fn(bundle);
+}
+
+/** 内部用完整设置（含解密后的 key）；渲染层永远拿不到明文 key */
+function effectiveSettings() {
+  const s = store.loadSettings();
+  if (s.apiKeyEnc && !s.apiKey) {
+    try { s.apiKey = safeStorage.decryptString(Buffer.from(s.apiKeyEnc, 'base64')); }
+    catch { s.apiKey = ''; }
+  }
+  return s;
+}
+
+function encryptApiKey(settings, patch) {
+  const out = { ...patch };
+  if (typeof out.apiKey === 'string') {
+    if (out.apiKey === '') {
+      delete out.apiKey;
+      out.apiKeyEnc = '';
+    } else if (safeStorage && safeStorage.isEncryptionAvailable && safeStorage.isEncryptionAvailable()) {
+      try {
+        out.apiKeyEnc = safeStorage.encryptString(out.apiKey).toString('base64');
+        delete out.apiKey; // 明文不落盘
+      } catch { /* 加密失败则退回明文（旧机制） */ }
+    }
+  }
+  return out;
 }
 
 function handle(channel, fn) {
   ipcMain.handle(channel, async (event, ...args) => {
     try {
-      return { ok: true, data: await fn(...args) };
+      return { ok: true, data: await fn(...args, event) };
     } catch (err) {
-      return { ok: false, error: (err && err.message) || String(err) };
+      const e = err || {};
+      return { ok: false, error: e.message || String(err), blocked: !!e.blocked, reply: e.blocked || undefined };
     }
   });
 }
@@ -67,12 +117,12 @@ handle('app:info', () => ({ version: app.getVersion(), dataDir: path.join(app.ge
 
 // ---------- persons ----------
 handle('persons:list', () => store.listPersons());
-handle('persons:create', ({ name, alias }) => store.createPerson(name, alias));
-handle('persons:delete', ({ id }) => store.deletePerson(id));
+handle('persons:create', ({ name, alias }) => store.createPerson(String(name || '').slice(0, 20), String(alias || '').slice(0, 30)));
+handle('persons:delete', ({ id }) => store.deletePerson(validId(id)));
 handle('persons:get', ({ id }) => withPerson(id, b => b));
 handle('persons:update', ({ id, patch }) => withPerson(id, b => {
-  if (patch.name) b.name = patch.name;
-  if (patch.alias !== undefined) b.alias = patch.alias;
+  if (patch.name) b.name = String(patch.name).slice(0, 20);
+  if (patch.alias !== undefined) b.alias = String(patch.alias).slice(0, 30);
   return store.savePerson(b);
 }));
 
@@ -84,7 +134,7 @@ handle('evidence:add', ({ id, items }) => withPerson(id, b => {
     added.push(store.addEvidence(b, { sourceType: it.sourceType || 'other', text: String(it.text).slice(0, 4000), ts: it.ts || '', sender: it.sender || '', isSelf: it.isSelf }));
   }
   store.savePerson(b);
-  return { added: added.length, total: b.evidence.length };
+  return { added: added.length, total: b.evidence.length, truncated: Math.max(0, (items || []).length - 500) };
 }));
 handle('evidence:delete', ({ id, evidenceId }) => withPerson(id, b => {
   b.evidence = b.evidence.filter(e => e.id !== evidenceId);
@@ -93,15 +143,17 @@ handle('evidence:delete', ({ id, evidenceId }) => withPerson(id, b => {
 }));
 
 // ---------- import ----------
-handle('import:parse', ({ text, selfName }) => parser.parseAuto(text, { selfName }));
+handle('import:parse', ({ text, selfName }) => parser.parseAuto(String(text || '').slice(0, MAX_IMPORT_BYTES * 2), { selfName }));
 handle('import:commit', ({ id, messages, sourceType }) => withPerson(id, b => {
+  const LIMIT = 20000;
+  const list = (messages || []).slice(0, LIMIT);
   const added = [];
-  for (const m of messages.slice(0, 20000)) {
+  for (const m of list) {
     if (!m.text || !String(m.text).trim()) continue;
     added.push(store.addEvidence(b, { sourceType, text: String(m.text).slice(0, 4000), ts: m.ts || '', sender: m.sender || '', isSelf: m.isSelf }));
   }
   store.savePerson(b);
-  return { added: added.length, total: b.evidence.length };
+  return { added: added.length, total: b.evidence.length, truncated: Math.max(0, (messages || []).length - LIMIT) };
 }));
 handle('import:file', async ({ id, sourceType, selfName }) => {
   const r = await dialog.showOpenDialog(win, {
@@ -110,25 +162,38 @@ handle('import:file', async ({ id, sourceType, selfName }) => {
     properties: ['openFile'],
   });
   if (r.canceled || !r.filePaths.length) return { canceled: true };
-  const text = fs.readFileSync(r.filePaths[0], 'utf8');
+  const p = r.filePaths[0];
+  const st = fs.statSync(p);
+  if (st.size > MAX_IMPORT_BYTES) throw new Error(`文件超过 20MB（当前 ${Math.round(st.size / 1024 / 1024)}MB），请先拆分后再导入`);
+  const buf = await fs.promises.readFile(p);
+  let text = buf.toString('utf8');
+  // GBK 检测：UTF-8 解码后出现大量替换符 → 用 GBK 重解码（QQ/TXT 导出常见 ANSI 编码）
+  const bad = (text.match(/\uFFFD/g) || []).length;
+  if (bad > text.length * 0.001) {
+    try { text = new util.TextDecoder('gbk').decode(buf); } catch { /* 无 GBK 解码器则保留 utf8 结果 */ }
+  }
   const parsed = parser.parseAuto(text, { selfName });
   const result = await withPerson(id, b => {
+    const LIMIT = 20000;
+    const list = parsed.messages.slice(0, LIMIT);
     const added = [];
-    for (const m of parsed.messages.slice(0, 20000)) {
+    for (const m of list) {
       added.push(store.addEvidence(b, { sourceType, text: m.text, ts: m.ts, sender: m.sender, isSelf: m.isSelf }));
     }
     store.savePerson(b);
-    return { added: added.length, total: b.evidence.length, format: parsed.format };
+    return { added: added.length, total: b.evidence.length, format: parsed.format, truncated: Math.max(0, parsed.messages.length - LIMIT) };
   });
   return { canceled: false, ...result };
 });
 
 // ---------- card / claims ----------
-handle('card:induce', ({ id }, progressCb) => withPerson(id, async b => {
-  return pipeline.inductEvidence(store, b, store.loadSettings(), {});
+handle('card:induce', ({ id }, event) => withPerson(id, async b => {
+  return pipeline.inductEvidence(store, b, effectiveSettings(), {
+    onProgress: (prog) => { try { event.sender.send('induce:progress', prog); } catch {} },
+  });
 }));
 handle('claims:add', ({ id, claim }) => withPerson(id, b => {
-  const c = store.addClaim(b, claim);
+  const c = store.addClaim(b, { ...claim, text: String(claim.text || '').slice(0, 200) });
   store.savePerson(b);
   return c;
 }));
@@ -136,7 +201,7 @@ handle('claims:update', ({ id, claimId, patch }) => withPerson(id, b => {
   const c = b.claims.find(x => x.id === claimId);
   if (!c) throw new Error('条目不存在');
   for (const k of ['layer', 'text', 'epistemic', 'confidence', 'note']) {
-    if (patch[k] !== undefined) c[k] = patch[k];
+    if (patch[k] !== undefined) c[k] = k === 'text' ? String(patch[k]).slice(0, 200) : patch[k];
   }
   c.updatedAt = new Date().toISOString();
   store.savePerson(b);
@@ -162,19 +227,21 @@ handle('dynamic:resolve', ({ id, dynId }) => withPerson(id, b => {
 handle('card:compile', ({ id }) => withPerson(id, b => P.compileCard(b)));
 
 // ---------- session / rehearsal ----------
-handle('session:start', async ({ id, scenario }) => withPerson(id, async b => {
-  const { session, reply } = await pipeline.startSession(store, b, store.loadSettings(), scenario);
+handle('session:start', async ({ id, scenario, goal }) => withPerson(id, async b => {
+  const { session, reply } = await pipeline.startSession(store, b, effectiveSettings(), scenario, goal);
   return { sessionId: session.id, reply, messages: session.messages };
 }));
 handle('session:send', async ({ id, sessionId, text }) => withPerson(id, async b => {
-  if (P.redlineCheck(text)) {
-    return { blocked: true, reply: '[系统提示] 这个请求涉及操控、打压或伤害性策略，本工具不提供。演练的目的是帮你更好地理解与表达自己——比如如何诚实地说出你的需求，或如何接住对方的拒绝。' };
+  try {
+    const reply = await pipeline.twinTurn(store, b, effectiveSettings(), sessionId, text);
+    return { reply };
+  } catch (err) {
+    if (err && err.blocked) return { blocked: true, reply: err.blocked };
+    throw err;
   }
-  const reply = await pipeline.twinTurn(store, b, store.loadSettings(), sessionId, text);
-  return { reply };
 }));
 handle('session:end', async ({ id, sessionId }) => withPerson(id, async b => {
-  return { report: await pipeline.endSession(store, b, store.loadSettings(), sessionId) };
+  return { report: await pipeline.endSession(store, b, effectiveSettings(), sessionId) };
 }));
 handle('session:list', ({ id }) => withPerson(id, b => b.sessions.map(s => ({ id: s.id, scenario: s.scenario, status: s.status, createdAt: s.createdAt, turns: s.messages.filter(m => m.role === 'user').length }))));
 handle('session:get', ({ id, sessionId }) => withPerson(id, b => {
@@ -186,13 +253,16 @@ handle('session:get', ({ id, sessionId }) => withPerson(id, b => {
 
 // ---------- prediction / feedback ----------
 handle('prediction:freeze', async ({ id, sessionId }) => withPerson(id, async b => {
-  return { prediction: await pipeline.freezePrediction(store, b, store.loadSettings(), sessionId) };
+  return { prediction: await pipeline.freezePrediction(store, b, effectiveSettings(), sessionId) };
 }));
-handle('prediction:list', ({ id }) => withPerson(id, b => b.predictions.map(p => ({ ...p, hypotheses: p.hypotheses }))));
+handle('prediction:list', ({ id }) => withPerson(id, b => b.predictions));
 handle('feedback:submit', async ({ id, predictionId, raw }) => withPerson(id, async b => {
-  return pipeline.submitFeedback(store, b, store.loadSettings(), { predictionId, raw });
+  return pipeline.submitFeedback(store, b, effectiveSettings(), { predictionId, raw });
 }));
 handle('attribution:list', ({ id }) => withPerson(id, b => b.attributions));
+handle('attribution:undo', ({ id, attributionId }) => withPerson(id, b => {
+  return { reverted: pipeline.undoAttribution(store, b, attributionId) };
+}));
 
 // ---------- stats / radar ----------
 handle('stats:get', ({ id }) => withPerson(id, b => store.computeStats(b)));
@@ -204,39 +274,43 @@ handle('interview:state', ({ id }) => withPerson(id, b => ({
   summaries: b.interview.summaries, final: b.interview.final, suggestions: b.interview.suggestions,
   questions: P.INTERVIEW_QUESTIONS,
 })));
+handle('interview:start', ({ id }) => withPerson(id, b => {
+  b.interview.started = true;
+  if (!b.interview.currentQ) b.interview.currentQ = 1;
+  store.savePerson(b);
+  return true;
+}));
 handle('interview:answer', async ({ id, qid, answer, skipped }) => withPerson(id, async b => {
-  return pipeline.interviewAnswer(store, b, store.loadSettings(), { qid, answer, skipped });
+  return pipeline.interviewAnswer(store, b, effectiveSettings(), { qid, answer, skipped });
 }));
 handle('interview:probeAnswer', async ({ id, qid, answer }) => withPerson(id, async b => {
-  return pipeline.interviewProbeAnswer(store, b, store.loadSettings(), { qid, answer });
+  return pipeline.interviewProbeAnswer(store, b, effectiveSettings(), { qid, answer });
 }));
 handle('interview:summary', async ({ id }) => withPerson(id, async b => {
-  return { text: await pipeline.interviewSummary(store, b, store.loadSettings()) };
+  return { text: await pipeline.interviewSummary(store, b, effectiveSettings()) };
 }));
 handle('interview:finalize', async ({ id }) => withPerson(id, async b => {
-  return pipeline.interviewFinalize(store, b, store.loadSettings());
+  return pipeline.interviewFinalize(store, b, effectiveSettings());
 }));
 handle('interview:writeClaims', ({ id, indexes }) => withPerson(id, b => {
   return { written: pipeline.interviewWriteClaims(store, b, indexes) };
 }));
 
 // ---------- settings ----------
-handle('settings:get', () => store.loadSettings());
-handle('settings:set', (patch) => {
-  if (patch.provider === 'openai') {
-    // 允许保留 mock 的空 key，但连接测试会兜底
-  }
-  return store.saveSettings(patch);
-});
-handle('settings:test', async () => {
+handle('settings:get', () => {
   const s = store.loadSettings();
+  return { ...s, apiKey: '', hasApiKey: !!(s.apiKey || s.apiKeyEnc), keyEncrypted: !!s.apiKeyEnc };
+});
+handle('settings:set', (patch) => store.saveSettings(encryptApiKey(store.loadSettings(), patch || {})));
+handle('settings:test', async () => {
+  const s = effectiveSettings();
   const reply = await chat(s, [{ role: 'user', content: '连接测试，请回复"连接正常"四个字。' }], { task: 'TWIN', temperature: 0, timeoutMs: 20000 });
   return { reply: String(reply).slice(0, 100) };
 });
 
 // ---------- export / import card ----------
 handle('card:export', async ({ id }) => {
-  const bundle = store.loadPerson(id);
+  const bundle = store.loadPerson(validId(id));
   if (!bundle) throw new Error('人物不存在');
   const r = await dialog.showSaveDialog(win, {
     title: '导出生境卡',
@@ -268,7 +342,7 @@ handle('card:import', async () => {
   if (data.format !== 'habitat-sandbox-card' || !Array.isArray(data.claims)) {
     throw new Error('不是本工具导出的生境卡文件（缺少 format 标识）');
   }
-  const bundle = store.createPerson(String(data.name || '导入人物') + '（导入）', String(data.alias || ''));
+  const bundle = store.createPerson(String(data.name || '导入人物').slice(0, 18) + '（导入）', String(data.alias || '').slice(0, 30));
   bundle.claims = data.claims
     .filter(c => c && c.text && P.LAYER_NAMES[c.layer])
     .map(c => ({
@@ -283,16 +357,17 @@ handle('card:import', async () => {
   if (Array.isArray(data.dynamic)) {
     bundle.dynamic = data.dynamic
       .filter(d => d && d.text)
-      .map(d => ({ id: require('./store').uid(), text: String(d.text).slice(0, 300), asOf: d.asOf || new Date().toISOString(), resolved: !!d.resolved, createdAt: new Date().toISOString() }));
+      .map(d => ({ id: require('./store').uid(), text: String(d.text).slice(0, 300), asOf: typeof d.asOf === 'string' ? d.asOf : new Date().toISOString(), resolved: !!d.resolved, createdAt: new Date().toISOString() }));
   }
   store.savePerson(bundle);
   return { id: bundle.id, name: bundle.name, claims: bundle.claims.length };
 });
 
-// ---------- misc ----------
-handle('shell:openPath', ({ p }) => shell.openPath(p));
-
-app.on('uncatchException', () => {});
 process.on('uncaughtException', (err) => {
-  try { fs.appendFileSync(path.join(app.getPath('userData'), 'habitat-data', 'error.log'), new Date().toISOString() + ' ' + (err.stack || String(err)) + '\n'); } catch {}
+  try {
+    const logFile = path.join(app.getPath('userData'), 'habitat-data', 'error.log');
+    // 简单轮转：超过 512KB 重写
+    try { if (fs.statSync(logFile).size > 512 * 1024) fs.writeFileSync(logFile, ''); } catch {}
+    fs.appendFileSync(logFile, new Date().toISOString() + ' ' + (err.stack || String(err)) + '\n');
+  } catch {}
 });

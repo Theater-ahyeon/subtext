@@ -111,7 +111,7 @@ async function viewHome(el) {
   el.innerHTML = `
     <div class="page-head">
       <div class="page-title">人物</div>
-      <div class="page-desc">为每一位你想理解、想演练的真实对象建立一份<b>本地生境档案</b>。所有数据只保存在你自己的电脑上。</div>
+      <div class="page-desc">为每一位你想理解、想演练的真实对象建立一份<b>本地生境档案</b>。档案只保存在你自己的电脑上；配置在线模型后，相关文本会发送给你配置的模型服务商。</div>
       <div class="mt8"><button class="btn sm ghost" id="importCardBtn">导入卡片文件</button></div>
     </div>
     ${state.persons.length ? `
@@ -144,6 +144,7 @@ async function viewHome(el) {
     card.addEventListener('click', (e) => {
       if (e.target.closest('[data-del]')) return;
       state.currentId = card.dataset.id;
+      state.session = null;
       go('card');
     });
   });
@@ -169,14 +170,14 @@ async function viewHome(el) {
       const name = $('#mName').value.trim();
       if (!name) return toast('请填写称呼', 'err');
       const b = await guard(() => H.persons.create({ name, alias: $('#mAlias').value.trim() }), '创建中…');
-      if (b) { closeModal(); toast('已创建', 'ok'); state.currentId = b.id; go('card'); }
+      if (b) { closeModal(); toast('已创建', 'ok'); state.currentId = b.id; state.session = null; go('card'); }
     };
   };
   $('#addPersonCard') && ($('#addPersonCard').onclick = openCreate);
   $('#emptyAdd') && ($('#emptyAdd').onclick = openCreate);
   $('#importCardBtn').onclick = async () => {
     const r = await guard(() => H.card.importCard(), '导入中…');
-    if (r && !r.canceled) { toast(`已导入「${r.name}」（${r.claims} 条认知条目）`, 'ok'); state.currentId = r.id; go('card'); }
+    if (r && !r.canceled) { toast(`已导入「${r.name}」（${r.claims} 条认知条目）`, 'ok'); state.currentId = r.id; state.session = null; go('card'); }
   };
 }
 
@@ -192,6 +193,10 @@ async function viewCard(el) {
         <button class="btn sm ghost" id="editPerson">编辑</button>
       </div>
       <div class="page-desc">${esc(b.alias || '')} · 素材 ${stats.evidence} 条 · 认知条目 ${stats.claims} 条（事实 ${stats.byEpistemic.fact} / 推断 ${stats.byEpistemic.inference} / 空白 ${stats.byEpistemic.blank}）</div>
+      ${(!b.claims.length && !b.evidence.length) ? `
+      <div class="note warn mt8" style="font-size:13px">
+        <b>从这里开始：</b>① 去「导入」粘贴你们的聊天记录（或到「证据库」手动存证）→ ② 回来点「从素材归纳初稿」→ ③ 或者先做「24问访谈」，用你对她的了解冷启动。
+      </div>` : ''}
     </div>
     <div class="panel">
       <div class="panel-title">生境卡引擎
@@ -244,12 +249,26 @@ async function viewCard(el) {
   `;
 
   $('#induceBtn').onclick = async () => {
-    const r = await guard(() => H.card.induce({ id: b.id }), 'AI 正在按生境写法归纳素材…（可能较慢）');
-    if (r) { toast(`归纳完成：新增 ${r.newClaims} 条（共 ${r.total} 条，${r.chunks} 批素材）`, 'ok'); viewCard(el); }
+    if (!b.evidence.length) { toast('暂无素材：请先到「导入」或「证据库」添加素材', 'err'); return; }
+    loading(true, 'AI 正在按生境写法归纳素材…');
+    try {
+      const r = await H.card.induce({ id: b.id }, (p) => {
+        $('#loadingText').textContent = `归纳进度：第 ${p.step} / ${p.total} 批素材…`;
+      });
+      toast(`归纳完成：新增 ${r.newClaims} 条、合并复现 ${r.mergedDups || 0} 条（共 ${r.total} 条，${r.chunks} 批）`, 'ok');
+      if (state.view === 'card') viewCard(el);
+    } catch (err) {
+      toast(err.message || '归纳失败', 'err');
+    } finally {
+      loading(false);
+    }
   };
   $('#compileBtn').onclick = async () => {
     const card = await guard(() => H.card.compile({ id: b.id }), '组装中…');
-    if (card) modal(`<h3>注入给 AI 的最小生境卡</h3><pre style="white-space:pre-wrap;font-size:12.5px;line-height:1.7">${esc(card)}</pre><div class="modal-ops"><button class="btn ghost" onclick="document.getElementById('modalBackdrop').hidden=true">关闭</button></div>`);
+    if (card) {
+      modal(`<h3>注入给 AI 的最小生境卡</h3><pre style="white-space:pre-wrap;font-size:12.5px;line-height:1.7">${esc(card)}</pre><div class="modal-ops"><button class="btn ghost" id="mClose">关闭</button></div>`);
+      $('#mClose').onclick = closeModal;
+    }
   };
   $('#exportBtn').onclick = async () => {
     const r = await guard(() => H.card.export({ id: b.id }), '导出中…');
@@ -294,7 +313,9 @@ async function viewCard(el) {
     };
   };
   const radar = await guard(() => H.radar({ id: b.id }), '加载…');
-  $('#radarBox').innerHTML = radar && radar.length
+  const radarBox = $('#radarBox');
+  if (!radarBox) return; // 用户已切走视图
+  radarBox.innerHTML = radar && radar.length
     ? radar.map(r => `<div class="list-row"><span class="badge plain">${esc(r.from)}</span><div class="grow list-title">${esc(r.text)}</div></div>`).join('')
     : '<div class="muted small">暂无空白或待确认项 —— 先导入素材并归纳，或从 24 问访谈沉淀。</div>';
 }
@@ -355,7 +376,7 @@ async function viewEvidence(el) {
       ${list.length ? list.map(e => `
         <div class="list-row">
           <span class="badge plain">#${e.seq}</span>
-          <span class="badge plain">${SRC[e.sourceType] || e.sourceType}</span>
+          <span class="badge plain">${esc(SRC[e.sourceType] || e.sourceType)}</span>
           <div class="grow"><div class="evi-text" data-evi="${e.id}">${esc(e.text)}</div>
             <div class="list-sub">${esc(e.sender || '')}${e.ts ? ' · ' + esc(e.ts.replace('T', ' ').slice(0, 16)) : ''}${e.isSelf === true ? ' · 本人' : e.isSelf === false && e.sender ? ' · ' + esc(e.sender) : ''}</div></div>
           <button class="btn sm ghost" data-open="${e.id}">展开</button>
@@ -384,6 +405,7 @@ async function viewImport(el) {
     <div class="page-head">
       <div class="page-title">导入聊天素材</div>
       <div class="page-desc">支持 GitHub 常见导出工具的格式：<b>留痕 MemoTrace / WeChatMsg</b>（微信 JSON / CSV / TXT）、<b>QQ 导出 TXT</b>（时间戳行）、通用 JSON 数组、JSONL、以及任意直接粘贴的对话文本。解析完全在本机完成。</div>
+      <div class="note red mt8">知情提示：你即将录入与<b>真实第三方</b>的私人对话。仅用于你自己的理解与沟通练习，请勿导入你无权处理的对话，勿公开分享档案。</div>
     </div>
     <div class="panel">
       <div class="panel-title">方式一：粘贴文本</div>
@@ -436,13 +458,16 @@ QQ TXT：2024-01-01 12:00:00 她的昵称
     `;
     $('#impCommit') && ($('#impCommit').onclick = async () => {
       const res = await guard(() => H.imp.commit({ id: state.currentId, messages: r.messages, sourceType: $('#impSrc').value }), '导入中…');
-      if (res) { toast(`已导入 ${res.added} 条，证据库共 ${res.total} 条`, 'ok'); state.importPreview = null; }
+      if (res) {
+        toast(`已导入 ${res.added} 条，证据库共 ${res.total} 条` + (res.truncated ? `（⚠ 超出上限，截断 ${res.truncated} 条）` : ''), res.truncated ? 'err' : 'ok');
+        state.importPreview = null;
+      }
     });
   };
   $('#impFile').onclick = async () => {
     const src = $('#impSrc').value;
     const r = await guard(() => H.imp.file({ id: state.currentId, sourceType: src, selfName: $('#impSelf').value }), '导入中…');
-    if (r && !r.canceled) toast(`已导入 ${r.added} 条（格式 ${r.format.toUpperCase()}）`, 'ok');
+    if (r && !r.canceled) toast(`已导入 ${r.added} 条（格式 ${r.format.toUpperCase()}）` + (r.truncated ? `（⚠ 截断 ${r.truncated} 条）` : ''), r.truncated ? 'err' : 'ok');
   };
 }
 
@@ -453,6 +478,7 @@ async function viewInterview(el) {
   state.interview = st;
   const doneCount = Object.keys(st.records).length;
   const q = st.questions.find(x => x.qid === st.currentQ);
+  const currentRecord = q ? st.records[q.qid] : null;
   el.innerHTML = `
     <div class="page-head">
       <div class="page-title">24问访谈</div>
@@ -475,7 +501,7 @@ async function viewInterview(el) {
         <div style="font-size:15.5px;line-height:1.7;margin:8px 0 4px">${esc(q.text)}</div>
         <div class="muted small">${esc(q.hint || '')}</div>
         <label class="field mt14"><span>你的回答（越具体越好）</span>
-          <textarea id="ivAns" placeholder="她具体会怎么做？最近一次让你产生这种感觉是发生了什么？"></textarea></label>
+          <textarea id="ivAns" placeholder="她具体会怎么做？最近一次让你产生这种感觉是发生了什么？">${esc(currentRecord && currentRecord.answer || '')}</textarea></label>
         <div id="ivProbeBox"></div>
         <div class="flex mt8">
           <button class="btn primary" id="ivSubmit">提交回答</button>
@@ -515,13 +541,16 @@ async function viewInterview(el) {
       $('#ivProbeOk').onclick = async () => {
         const pa = $('#ivProbeAns') ? $('#ivProbeAns').value.trim() : '';
         const r2 = await guard(() => H.interview.probeAnswer({ id: state.currentId, qid, answer: pa }), '记录中…');
-        if (r2) viewInterview(el);
+        if (r2 && state.view === 'interview') viewInterview(el);
       };
-    } else viewInterview(el);
+    } else if (state.view === 'interview') viewInterview(el);
   };
   $('#ivSubmit') && ($('#ivSubmit').onclick = () => submit(false));
   $('#ivSkip') && ($('#ivSkip').onclick = () => submit(true));
-  $('#ivStart') && ($('#ivStart').onclick = () => viewInterview(el));
+  $('#ivStart') && ($('#ivStart').onclick = async () => {
+    const ok = await guard(() => H.interview.start({ id: state.currentId }), '开启访谈…');
+    if (ok) viewInterview(el);
+  });
   $('#ivSummary') && ($('#ivSummary').onclick = async () => {
     const r = await guard(() => H.interview.summary({ id: state.currentId }), '整理中…');
     if (r) { modal(`<h3>中途小结</h3>${md(r)}<div class="modal-ops"><button class="btn ghost" id="mCancel">关闭</button></div>`); $('#mCancel').onclick = closeModal; }
@@ -589,8 +618,10 @@ async function viewRehearsal(el) {
       <div class="chips mb14" id="scnChips">
         ${SCENARIOS.map((s, i) => `<span class="chip ${i === 0 ? 'active' : ''}" data-scn="${i}">${s.label}</span>`).join('')}
       </div>
-      <label class="field"><span>场景补充（对 AI 可见，她看不到）</span>
-        <textarea id="scnText" placeholder="补充背景：最近发生了什么、你们的关系阶段、你这次想达成的目标…"></textarea></label>
+      <label class="field"><span>情境设定（她也能感知到的客观情境）</span>
+        <textarea id="scnText" placeholder="最近发生了什么、你们的关系阶段、这次对话的场合…"></textarea></label>
+      <label class="field"><span>演练目标（只有复盘教练看得到，她不知道）</span>
+        <textarea id="scnGoal" style="min-height:56px" placeholder="你这次想达成什么？例如：弄清她最近的疏远是不是因为我的话；练习接住拒绝"></textarea></label>
       <div class="note">红线提醒：本工具不提供操控、打压类策略；演练的目的是更诚实地表达与更好地理解。</div>
       <div class="mt14"><button class="btn primary" id="scnStart">开始演练</button></div>
     </div>
@@ -616,10 +647,12 @@ async function viewRehearsal(el) {
   });
   $('#scnStart').onclick = async () => {
     const scenario = $('#scnText').value.trim();
-    const r = await guard(() => H.session.start({ id: state.currentId, scenario }), '孪生生成中…她正在上场');
+    const goal = $('#scnGoal').value.trim();
+    const r = await guard(() => H.session.start({ id: state.currentId, scenario, goal }), '孪生生成中…她正在上场');
     if (r) {
       state.session = { id: r.sessionId, messages: r.messages };
       state.sessionScenario = scenario;
+      state.sessionGoal = goal;
       toast('演练开始', 'ok'); renderChat(el, sessions);
     }
   };
@@ -629,6 +662,7 @@ async function viewRehearsal(el) {
       if (!r) return;
       state.session = { id: r.session.id, messages: r.session.messages, readonly: r.session.status === 'ended' };
       state.sessionScenario = r.session.scenario;
+      state.sessionGoal = r.session.goal || '';
       renderChat(el, sessions, r.report);
     };
   });
@@ -653,7 +687,7 @@ function renderChat(el, sessions, report) {
         <div class="flex mt14">
           <button class="btn sm" id="freezeBtn">冻结预测单</button>
           <button class="btn sm" id="endBtn">结束并生成复盘</button>
-          <span class="muted small">预测单 = 你结束前对"她现实中会如何回应"的多假设快照，供之后对照现实校准。</span>
+          <span class="muted small">结束演练前可冻结预测单 = 对"她现实中会如何回应"的多假设快照；之后到「校准闭环」录入她的真实反应。</span>
         </div>`}
       </div>
     </div>
@@ -663,14 +697,25 @@ function renderChat(el, sessions, report) {
   const scroll = $('#chatScroll');
   scroll.scrollTop = scroll.scrollHeight;
   const send = async () => {
-    const text = $('#chatText').value.trim();
+    const input = $('#chatText');
+    const text = input.value.trim();
     if (!text) return;
-    $('#chatText').value = '';
+    input.value = '';
     state.session.messages.push({ role: 'user', content: text, ts: new Date().toISOString() });
     appendBubble({ role: 'user', content: text });
     const r = await guard(() => H.session.send({ id: state.currentId, sessionId: state.session.id, text }), '她在想怎么回…');
-    if (!r) return;
+    if (!r) {
+      // 失败回滚：用户消息未落盘，从界面与会话状态中撤回
+      state.session.messages.pop();
+      removeLastBubble('user');
+      input.value = text;
+      return;
+    }
     if (r.blocked) {
+      // 红线拦截：撤回用户消息（未入库），显示系统提示
+      state.session.messages.pop();
+      removeLastBubble('user');
+      input.value = text;
       state.session.messages.push({ role: 'system', content: r.reply, ts: new Date().toISOString() });
       appendBubble({ role: 'system', content: r.reply });
       return;
@@ -719,6 +764,12 @@ function appendBubble(m) {
   scroll.insertAdjacentHTML('beforeend', chatBubble(m));
   scroll.scrollTop = scroll.scrollHeight;
 }
+function removeLastBubble(role) {
+  const scroll = $('#chatScroll');
+  if (!scroll) return;
+  const msgs = scroll.querySelectorAll('.chat-msg.' + role);
+  if (msgs.length) msgs[msgs.length - 1].remove();
+}
 
 /* ---------------- 视图：校准闭环 ---------------- */
 async function viewCalibration(el) {
@@ -728,17 +779,25 @@ async function viewCalibration(el) {
     H.stats({ id: state.currentId }),
   ]);
   if (!preds || !attrs || !stats) return;
+  const noLoop = !stats.predictions && !stats.attributionsAll;
   el.innerHTML = `
     <div class="page-head">
       <div class="page-title">校准闭环</div>
-      <div class="page-desc">核心循环：<b>预测冻结 → 现实回流 → 差异归因 → 卡片更新</b>。AI 的扮演是一次预测，她的真实反应是真值，差值就是学习信号。</div>
+      <div class="page-desc">核心循环：<b>预测冻结 → 现实回流 → 差异归因 → 卡片更新</b>。AI 的扮演是一次预测，她的真实反应是真值，差值就是学习信号。归因对卡片的修改可以撤销。</div>
     </div>
     <div class="stat-row mb14">
-      <div class="stat-card amber"><div class="stat-num">${pct(stats.hitRateTop1)}</div><div class="stat-label">Top1 命中率（${stats.attributions} 次归因）</div></div>
+      <div class="stat-card amber"><div class="stat-num">${pct(stats.hitRateTop1)}</div><div class="stat-label">Top1 命中率（${stats.attributions} 次有效归因${stats.unknownVerdicts ? `，${stats.unknownVerdicts} 次不计入` : ''}）</div></div>
       <div class="stat-card jade"><div class="stat-num">${pct(stats.hitRateTop2)}</div><div class="stat-label">Top2 命中率</div></div>
-      <div class="stat-card blue"><div class="stat-num">${pct(stats.loopCompletion)}</div><div class="stat-label">闭环完成率（${stats.feedbacks}/${stats.predictions}）</div></div>
+      <div class="stat-card blue"><div class="stat-num">${pct(stats.loopCompletion)}</div><div class="stat-label">闭环完成率（已回流 ${stats.feedbacks ? Math.min(stats.feedbacks, stats.predictions) : 0} / 预测单 ${stats.predictions}）</div></div>
       <div class="stat-card violet"><div class="stat-num">${stats.openPredictions}<span class="unit">个</span></div><div class="stat-label">待回流预测单</div></div>
     </div>
+    ${noLoop ? `
+    <div class="panel"><div class="empty">
+      <div class="empty-icon">⟳</div>
+      <div class="empty-title">闭环还没有开始</div>
+      <p>在「演练」中聊一个真实场景 → 结束前「冻结预测单」→ 回到这里录入她在现实中的真实反应。闭环完成率与命中率会从这里开始积累。</p>
+      <button class="btn primary" id="goRehearsal">去演练</button>
+    </div></div>` : ''}
     <div class="panel">
       <div class="panel-title">预测单</div>
       ${preds.length ? preds.slice().reverse().map(p => `
@@ -755,10 +814,15 @@ async function viewCalibration(el) {
           ${p.status === 'open' ? `
             <div class="mt14">
               <label class="field"><span>她在现实中的真实反应（原话优先，不要转述）</span>
-                <textarea id="fb-${p.id}" placeholder="把她的实际回复原文粘贴到这里；沉默/未回复也写下来"></textarea></label>
-              <button class="btn primary sm" data-fb="${p.id}">提交现实反馈并归因</button>
+                <textarea data-fbtext="${p.id}" placeholder="把她的实际回复原文粘贴到这里；沉默/未回复也写下来"></textarea></label>
+              <button class="btn primary sm" data-fb="${p.id}">提交现实反应并归因</button>
             </div>` : ''}
         </div>`).join('') : '<div class="muted small">还没有预测单 —— 在演练中点「冻结预测单」生成。</div>'}
+    </div>
+    <div class="panel">
+      <div class="panel-title">直接录入现实反应 <span class="muted small" style="font-weight:400">（没有预测单也可以回流：AI 会对照生境卡归因）</span></div>
+      <label class="field"><span>她的真实反应原文</span><textarea id="directFb" placeholder="例如她对你某次真实回复/行为的反应原话"></textarea></label>
+      <button class="btn sm primary" id="directFbBtn">录入并归因</button>
     </div>
     <div class="panel">
       <div class="panel-title">归因历史</div>
@@ -766,20 +830,42 @@ async function viewCalibration(el) {
         <div class="list-row">
           <span class="verdict ${a.verdict}">${VERDICT_NAMES[a.verdict] || a.verdict}</span>
           <div class="grow"><div class="list-sub" style="color:var(--text)">${esc(a.analysis.slice(0, 160))}</div>
-          ${a.updates && a.updates.length ? `<div class="list-sub">卡片更新：${a.updates.map(u => `${u.action === 'add' ? '＋' : u.action === 'update' ? '✎' : '↓'}${esc((u.text || '').slice(0, 40))}`).join('；')}</div>` : ''}</div>
+          ${a.updates && a.updates.length ? `<div class="list-sub">卡片更新：${a.updates.map(u => `${u.action === 'add' ? '＋' : u.action === 'update' ? '✎' : '↓'}${esc((u.text || '').slice(0, 40))}`).join('；')}</div>` : ''}
+          ${a.undone ? '<div class="list-sub" style="color:var(--jade)">已撤销</div>' : ''}</div>
           <span class="muted small">${esc(a.createdAt.slice(0, 10))}</span>
+          ${a.updates && a.updates.length && !a.undone ? `<button class="btn sm ghost" data-undo="${a.id}">撤销</button>` : ''}
         </div>`).join('') : '<div class="muted small">暂无归因记录。</div>'}
     </div>
   `;
+  $('#goRehearsal') && ($('#goRehearsal').onclick = () => go('rehearsal'));
   el.querySelectorAll('[data-fb]').forEach(btn => {
     btn.onclick = async () => {
-      const raw = $(`#fb-${btn.dataset.fb}`).value.trim();
+      const pid = btn.dataset.fb;
+      const raw = $(`[data-fbtext="${pid}"]`).value.trim();
       if (!raw) return toast('请填写她的真实反应', 'err');
-      const r = await guard(() => H.loop.feedback({ id: state.currentId, predictionId: btn.dataset.fb, raw }), '差异归因中…');
+      btn.disabled = true;
+      const r = await guard(() => H.loop.feedback({ id: state.currentId, predictionId: pid, raw }), '差异归因中…');
       if (r) {
-        toast(`归因完成：${VERDICT_NAMES[r.record.verdict] || r.record.verdict}，卡片更新 ${r.applied.length} 处`, 'ok');
-        viewCalibration(el);
-      }
+        toast(`归因完成：${VERDICT_NAMES[r.record.verdict] || r.record.verdict}，卡片更新 ${r.applied.length} 处（可撤销）`, 'ok');
+        if (state.view === 'calibration') viewCalibration(el);
+      } else btn.disabled = false;
+    };
+  });
+  $('#directFbBtn').onclick = async () => {
+    const raw = $('#directFb').value.trim();
+    if (!raw) return toast('请填写她的真实反应', 'err');
+    const btn = $('#directFbBtn');
+    btn.disabled = true;
+    const r = await guard(() => H.loop.feedback({ id: state.currentId, predictionId: null, raw }), '差异归因中…');
+    if (r) {
+      toast(`归因完成：${VERDICT_NAMES[r.record.verdict] || r.record.verdict}，卡片更新 ${r.applied.length} 处`, 'ok');
+      if (state.view === 'calibration') viewCalibration(el);
+    } else btn.disabled = false;
+  };
+  el.querySelectorAll('[data-undo]').forEach(btn => {
+    btn.onclick = async () => {
+      const r = await guard(() => H.loop.undo({ id: state.currentId, attributionId: btn.dataset.undo }), '撤销中…');
+      if (r) { toast(`已撤销 ${r.reverted.length} 处卡片修改`, 'ok'); if (state.view === 'calibration') viewCalibration(el); }
     };
   });
 }
@@ -791,7 +877,7 @@ async function viewSettings(el) {
   el.innerHTML = `
     <div class="page-head">
       <div class="page-title">设置</div>
-      <div class="page-desc">模型调用完全在本地发起，API Key 只保存在本机。演示模式无需任何配置即可体验全部流程。</div>
+      <div class="page-desc">数据存储仅在本机；配置在线模型后，<b>生境卡与相关对话文本会发送给你所配置的模型服务商处理</b>，请自行选择可信服务商。API Key 经系统级加密（DPAPI）保存，不会明文落盘。演示模式无需任何配置。</div>
     </div>
     <div class="panel">
       <div class="panel-title">模型服务</div>
@@ -801,7 +887,7 @@ async function viewSettings(el) {
       </select></label>
       <div id="openaiCfg" class="${s.provider === 'openai' ? '' : 'hidden'}">
         <label class="field"><span>API 地址（Base URL）</span><input type="text" id="stUrl" value="${esc(s.baseUrl)}" placeholder="https://api.openai.com/v1 或任意兼容网关"></label>
-        <label class="field"><span>API Key</span><input type="password" id="stKey" value="${esc(s.apiKey)}" placeholder="sk-…"></label>
+        <label class="field"><span>API Key ${s.hasApiKey ? '<span style="color:var(--jade)">（已配置，留空则保持不变）</span>' : ''}</span><input type="password" id="stKey" placeholder="${s.hasApiKey ? '········（已加密保存）' : 'sk-…'}"></label>
         <label class="field"><span>模型</span><input type="text" id="stModel" value="${esc(s.model)}" placeholder="gpt-4o-mini / deepseek-chat / …"></label>
       </div>
       <div class="flex mt8">
@@ -813,12 +899,12 @@ async function viewSettings(el) {
       <div class="panel-title">数据与隐私</div>
       <div class="report small">
         <ul>
-          <li>数据目录：<code>${esc(info.dataDir)}</code>（仅本机，不上传任何数据）</li>
+          <li>数据目录：<code>${esc(info.dataDir)}</code>（仅本机）</li>
           <li>平台：${esc(info.platform)} · 版本 v${esc(info.version)}</li>
           <li>删除人物档案时，其全部数据同步删除。</li>
         </ul>
       </div>
-      <div class="note warn mt8">红线：分析真实第三方涉及隐私，档案仅限本人查看，不对外共享，不用于伤害性用途；引擎内置拒绝操控类请求。</div>
+      <div class="note warn mt8">红线：分析真实第三方涉及隐私，请勿导入你无权处理的对话；档案仅限本人查看，不对外共享，不用于伤害性用途；引擎内置拒绝操控类请求。</div>
     </div>
   `;
   $('#stProvider').onchange = () => $('#openaiCfg').classList.toggle('hidden', $('#stProvider').value !== 'openai');
@@ -826,13 +912,15 @@ async function viewSettings(el) {
     const patch = { provider: $('#stProvider').value };
     if (patch.provider === 'openai') {
       patch.baseUrl = $('#stUrl').value.trim();
-      patch.apiKey = $('#stKey').value.trim();
       patch.model = $('#stModel').value.trim();
+      const key = $('#stKey').value.trim();
+      if (key) patch.apiKey = key; // 留空保持已有 key
     }
     await H.settings.set(patch);
     state.settings = await H.settings.get();
     updateModeChip();
     toast('已保存', 'ok');
+    viewSettings(el);
   };
   $('#stTest').onclick = async () => {
     const r = await guard(() => H.settings.test(), '测试中…');

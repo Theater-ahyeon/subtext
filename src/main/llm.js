@@ -7,7 +7,7 @@
  */
 
 const MOCK_REPLY = {
-  TWIN: '（演示模式）她看了一眼手机，又抬起来。「……所以你今天找我是有事？」\n语气不算冷，但也没有留出太多寒暄的空隙。她习惯先弄清楚目的，再决定花多少力气。',
+  TWIN: '（她抬起头，把手机扣在桌上）「……所以你今天找我，是有事吧？」',
   REVIEW: [
     '## 复盘报告（演示模式）',
     '### 一、孪生演绎质量',
@@ -58,15 +58,18 @@ const MOCK_REPLY = {
 function mockRespond(messages, opts = {}) {
   const task = opts.task || 'TWIN';
   const lastUser = [...messages].reverse().find(m => m.role === 'user');
-  if (task === 'TWIN') {
-    const cardHint = (messages[0] && messages[0].content.includes('【人物性情】')) ? '' : '';
-    return MOCK_REPLY.TWIN + (cardHint || '');
-  }
+  if (task === 'TWIN') return MOCK_REPLY.TWIN;
   if (task === 'INDUCE') return MOCK_REPLY.INDUCE;
   if (task === 'REVIEW') return MOCK_REPLY.REVIEW;
   if (task === 'HYPOTHESIS') return MOCK_REPLY.HYPOTHESIS;
   if (task === 'ATTRIBUTION') return MOCK_REPLY.ATTRIBUTION;
-  if (task === 'INTERVIEW_PROBE') return MOCK_REPLY.INTERVIEW_PROBE;
+  if (task === 'INTERVIEW_PROBE') {
+    // 演示模式：回答足够具体（含行为细节）就通过，否则追问 —— 模拟真实判定
+    const content = (lastUser && lastUser.content) || '';
+    const m = content.match(/「([^」]*)」/);
+    const answer = m ? m[1] : '';
+    return answer.length > 10 ? 'OK' : MOCK_REPLY.INTERVIEW_PROBE;
+  }
   if (task === 'INTERVIEW_SUMMARY') return MOCK_REPLY.INTERVIEW_SUMMARY;
   if (task === 'INTERVIEW_FINAL') return MOCK_REPLY.INTERVIEW_FINAL;
   return MOCK_REPLY.TWIN;
@@ -75,9 +78,18 @@ function mockRespond(messages, opts = {}) {
 function normalizeBaseUrl(url) {
   let u = (url || '').trim().replace(/\/+$/, '');
   if (!u) return '';
-  if (u.endsWith('/chat/completions')) return u;
-  if (/\/v\d+(beta)?$/.test(u)) return u + '/chat/completions';
-  return u + '/v1/chat/completions';
+  if (/\/openai\/deployments\//.test(u) || /azure\.com/i.test(u)) {
+    throw new Error('暂不支持 Azure 原生端点，请使用 OpenAI 兼容网关地址（以 /v1 结尾或包含 /v1/chat/completions）');
+  }
+  // 带查询参数的地址（如 ?api-key=…）：路径补全后把查询串接回
+  const qIdx = u.indexOf('?');
+  let query = '';
+  if (qIdx !== -1) { query = u.slice(qIdx); u = u.slice(0, qIdx); }
+  let out;
+  if (u.endsWith('/chat/completions')) out = u;
+  else if (/\/v\d+(beta)?$/.test(u)) out = u + '/chat/completions';
+  else out = u + '/v1/chat/completions';
+  return out + query;
 }
 
 async function chat(settings, messages, opts = {}) {
@@ -93,15 +105,29 @@ async function chat(settings, messages, opts = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.apiKey },
-      body: JSON.stringify({ model: settings.model, messages, temperature, stream: false }),
-      signal: ctrl.signal,
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.apiKey },
+        body: JSON.stringify({ model: settings.model, messages, temperature, stream: false }),
+        signal: ctrl.signal,
+      });
+    } catch (err) {
+      if (err && (err.name === 'AbortError' || /abort/i.test(String(err)))) {
+        throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）。可在设置中调大超时，或检查网络/代理。`);
+      }
+      const code = err && err.cause && err.cause.code ? err.cause.code : '';
+      throw new Error('网络请求失败' + (code ? '（' + code + '）' : '') + '：请检查网络连接与 API 地址');
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`API ${res.status}: ${body.slice(0, 300)}`);
+      let hint = '';
+      if (res.status === 401 || res.status === 403) hint = '：请检查 API Key';
+      else if (res.status === 404) hint = '：请检查 API 地址与模型名';
+      else if (res.status === 413 || res.status === 400) hint = '：内容可能过长，建议结束本场演练后新开一场，或减少素材';
+      else if (res.status === 429) hint = '：触发速率限制，稍后再试';
+      throw new Error(`API ${res.status}${hint} ${body.slice(0, 200)}`);
     }
     const data = await res.json();
     const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
@@ -112,24 +138,31 @@ async function chat(settings, messages, opts = {}) {
   }
 }
 
-/** 从 LLM 文本中鲁棒地提取 JSON（容忍代码围栏与前后说明） */
+/** 从 LLM 文本中鲁棒地提取 JSON（容忍多个代码围栏与前后说明） */
 function extractJson(text) {
   if (!text) throw new Error('LLM 返回为空');
-  let t = text.trim();
-  t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   const tryParse = (s) => { try { return JSON.parse(s); } catch { return null; } };
-  let v = tryParse(t);
-  if (v) return v;
-  const first = Math.min(...['{', '['].map(c => { const i = t.indexOf(c); return i === -1 ? Infinity : i; }));
-  if (first === Infinity) throw new Error('LLM 返回中未找到 JSON');
-  const open = t[first];
-  const close = open === '{' ? '}' : ']';
-  const last = t.lastIndexOf(close);
-  if (last > first) {
-    v = tryParse(t.slice(first, last + 1));
-    if (v) return v;
+  const candidates = [];
+  const fenceRe = /```(?:json)?\s*([\s\S]*?)```/g;
+  let m;
+  while ((m = fenceRe.exec(text)) !== null) candidates.push(m[1].trim());
+  candidates.push(text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
+  for (const c of candidates) {
+    const v = tryParse(c);
+    if (v !== null && typeof v === 'object') return v;
   }
-  throw new Error('LLM 返回的 JSON 无法解析：' + t.slice(0, 160));
+  for (const c of candidates) {
+    const first = Math.min(...['{', '['].map(ch => { const i = c.indexOf(ch); return i === -1 ? Infinity : i; }));
+    if (first === Infinity) continue;
+    const open = c[first];
+    const close = open === '{' ? '}' : ']';
+    const last = c.lastIndexOf(close);
+    if (last > first) {
+      const v = tryParse(c.slice(first, last + 1));
+      if (v !== null) return v;
+    }
+  }
+  throw new Error('LLM 返回的 JSON 无法解析：' + String(text).slice(0, 160));
 }
 
 module.exports = { chat, extractJson, normalizeBaseUrl, mockRespond };

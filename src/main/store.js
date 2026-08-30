@@ -14,7 +14,19 @@ const now = () => new Date().toISOString();
 function atomicWrite(file, data) {
   const tmp = file + '.tmp-' + process.pid + '-' + Date.now();
   fs.writeFileSync(tmp, data, 'utf8');
-  fs.renameSync(tmp, file);
+  // Windows 下目标文件可能被杀软/索引器短暂占用，重试后降级复制
+  for (let i = 0; i < 3; i++) {
+    try { fs.renameSync(tmp, file); return; }
+    catch (err) {
+      if (i === 2) {
+        try { fs.copyFileSync(tmp, file); fs.rmSync(tmp, { force: true }); return; }
+        catch { try { fs.rmSync(tmp, { force: true }); } catch {} throw err; }
+      }
+      const wait = [50, 200][i] || 200;
+      const until = Date.now() + wait;
+      while (Date.now() < until) { /* 忙等短暂退避 */ }
+    }
+  }
 }
 
 class Store {
@@ -27,6 +39,28 @@ class Store {
     fs.mkdirSync(path.join(this.dataDir, 'persons'), { recursive: true });
     if (!fs.existsSync(this.indexFile())) atomicWrite(this.indexFile(), '[]');
     if (!fs.existsSync(this.settingsFile())) atomicWrite(this.settingsFile(), JSON.stringify(this.defaultSettings(), null, 2));
+    this.reconcile();
+  }
+
+  /** 启动对账：persons 目录为唯一真相，修复索引漂移（孤儿补回 / 幽灵剔除），并清理残留 tmp */
+  reconcile() {
+    try {
+      const dir = path.join(this.dataDir, 'persons');
+      for (const f of fs.readdirSync(dir)) {
+        if (f.includes('.tmp-')) { try { fs.rmSync(path.join(dir, f), { force: true }); } catch {} }
+      }
+      const onDisk = fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => f.replace(/\.json$/, ''));
+      const index = this.listPersons().filter(p => onDisk.includes(p.id));
+      for (const id of onDisk) {
+        if (!index.some(p => p.id === id)) {
+          try {
+            const b = JSON.parse(fs.readFileSync(path.join(dir, id + '.json'), 'utf8'));
+            index.push({ id, name: b.name || id, alias: b.alias || '', createdAt: b.createdAt || new Date().toISOString() });
+          } catch { /* 损坏文件不进索引 */ }
+        }
+      }
+      atomicWrite(this.indexFile(), JSON.stringify(index, null, 2));
+    } catch { /* 对账失败不阻塞启动 */ }
   }
 
   defaultSettings() {
@@ -43,15 +77,25 @@ class Store {
 
   indexFile() { return path.join(this.dataDir, 'index.json'); }
   settingsFile() { return path.join(this.dataDir, 'settings.json'); }
-  personFile(id) { return path.join(this.dataDir, 'persons', id + '.json'); }
+  personFile(id) {
+    // 防路径穿越：id 必须是纯文件名
+    const safe = path.basename(String(id));
+    if (safe !== String(id) || /[\\/.]/.test(String(id))) throw new Error('非法的人物 id');
+    return path.join(this.dataDir, 'persons', safe + '.json');
+  }
 
   // ---------- settings ----------
+  static SETTING_KEYS = ['provider', 'baseUrl', 'apiKey', 'apiKeyEnc', 'model', 'temperature', 'analysisTemperature', 'timeoutMs'];
   loadSettings() {
     try { return { ...this.defaultSettings(), ...JSON.parse(fs.readFileSync(this.settingsFile(), 'utf8')) }; }
     catch { return this.defaultSettings(); }
   }
   saveSettings(patch) {
     const merged = { ...this.loadSettings(), ...patch };
+    // 字段白名单：渲染层不能注入未知设置键
+    for (const k of Object.keys(merged)) {
+      if (!Store.SETTING_KEYS.includes(k)) delete merged[k];
+    }
     atomicWrite(this.settingsFile(), JSON.stringify(merged, null, 2));
     return merged;
   }
@@ -127,10 +171,13 @@ class Store {
 
   // ---------- 统计 ----------
   computeStats(bundle) {
-    const attributed = bundle.attributions.filter(a => a.predictionId);
-    const hit = attributed.filter(a => a.verdict === 'hit').length;
-    const partial = attributed.filter(a => a.verdict === 'partial').length;
-    const total = attributed.length;
+    const VALID_VERDICTS = ['hit', 'partial', 'miss'];
+    const attributed = bundle.attributions.filter(a => a.predictionId && !a.undone);
+    const valid = attributed.filter(a => VALID_VERDICTS.includes(a.verdict));
+    const unknown = attributed.length - valid.length;
+    const hit = valid.filter(a => a.verdict === 'hit').length;
+    const partial = valid.filter(a => a.verdict === 'partial').length;
+    const total = valid.length;
     const byLayer = { basic: 0, life: 0, temperament: 0, expression: 0 };
     const byEpistemic = { fact: 0, inference: 0, blank: 0 };
     const bySource = { evidence: 0, user: 0, ai: 0 };
@@ -139,6 +186,7 @@ class Store {
       byEpistemic[c.epistemic] = (byEpistemic[c.epistemic] || 0) + 1;
       bySource[c.source] = (bySource[c.source] || 0) + 1;
     }
+    const linkedFeedbacks = bundle.feedbacks.filter(f => f.predictionId && bundle.predictions.some(p => p.id === f.predictionId)).length;
     const openPredictions = bundle.predictions.filter(p => p.status === 'open').length;
     return {
       evidence: bundle.evidence.length,
@@ -149,9 +197,11 @@ class Store {
       openPredictions,
       feedbacks: bundle.feedbacks.length,
       attributions: total,
+      attributionsAll: attributed.length,
+      unknownVerdicts: unknown,
       hitRateTop1: total ? hit / total : null,
       hitRateTop2: total ? (hit + partial) / total : null,
-      loopCompletion: bundle.predictions.length ? bundle.feedbacks.filter(f => f.predictionId).length / bundle.predictions.length : null,
+      loopCompletion: bundle.predictions.length ? linkedFeedbacks / bundle.predictions.length : null,
     };
   }
 }
