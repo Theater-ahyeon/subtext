@@ -33,7 +33,22 @@
 > 安装包未做代码签名（个人开源项目），Windows SmartScreen / macOS Gatekeeper 可能提示，选择"仍要运行"即可。
 > Release 页附 `SHA256SUMS.txt` 校验和（CI 构建产物）。
 
-**首次使用**：应用默认运行在**演示模式**（离线内置样例回复，全流程可体验）。要接真实模型，到「设置」切换为 OpenAI 兼容接口，填入任意兼容网关的地址 / Key / 模型名即可（设置页无需先建人物）。
+**首次使用**：应用默认运行在**演示模式**（离线内置样例回复，全流程可体验）。要接真实模型，到「设置」选择接入格式并填入密钥即可（设置页无需先建人物）。
+
+## 支持的 API 接入格式
+
+| 格式 | 适用服务商 | 认证方式 | 模型列表 |
+|---|---|---|---|
+| **OpenAI 兼容**（Chat Completions） | OpenAI、DeepSeek、Kimi、智谱 GLM、通义 Qwen、OpenRouter、OneAPI/NewAPI 等中转网关 | Bearer Key | ✅ 一键拉取 |
+| **Azure OpenAI** | Azure 云上的部署 | api-key 头 + 部署完整地址 | 部署制（不适用） |
+| **Anthropic Claude** | Claude 系列官方 API | x-api-key + anthropic-version | ✅ |
+| **Google Gemini** | Gemini 官方 API（原生 generateContent 协议） | x-goog-api-key | ✅（过滤非文本模型） |
+| **Ollama 本地模型** | 本机/局域网 Ollama，**完全离线** | 无需密钥 | ✅ |
+| **演示模式** | 无网络环境体验流程 | 无 | 内置样例 |
+
+- 设置页可一键「获取模型列表」直接下拉选择；连接测试逐步排查（密钥/地址/限流均有中文提示）。
+- 主流中转网关（OneAPI/NewAPI/SillyTavern 反代等）一律选 OpenAI 兼容格式。
+- 最在意隐私的搭配：**Ollama 本地模型 + 生境沙盒本地存储 = 全程不出本机**。
 
 ## 功能总览
 
@@ -90,7 +105,7 @@ npm test             # 单元测试（24 个，无需 Electron/GUI/Key）
 npm run dist         # 本地构建 Windows 安装包（nsis + zip）
 ```
 
-技术栈：Electron 33 · 原生 HTML/CSS/JS（无构建步骤）· JSON 本地存储（原子写入 + 启动对账）· OpenAI 兼容 API（含离线 mock）。业务核心（store/parser/llm/prompts/pipeline）与 Electron 解耦，可在纯 Node 环境测试。
+技术栈：Electron 33 · 原生 HTML/CSS/JS（无构建步骤）· JSON 本地存储（原子写入 + 启动对账）· 多协议 LLM 接入（OpenAI 兼容 / Azure / Anthropic / Gemini / Ollama + 离线 mock，适配器架构）。业务核心（store/parser/llm/prompts/pipeline）与 Electron 解耦，可在纯 Node 环境测试。
 
 ### 项目结构
 
@@ -99,7 +114,7 @@ src/
   main/          # 主进程（无 Electron 依赖的纯 Node 模块 + main.js IPC 编排）
     store.js     #   本地存储：JSON 原子写入、索引对账、统计
     parser.js    #   聊天记录导入解析（JSON/CSV/TXT/微信合并转发）
-    llm.js       #   LLM Provider（OpenAI 兼容 + 离线 mock）与 JSON 提取
+    llm.js       #   多协议 LLM 适配器（openai/azure/anthropic/gemini/ollama/mock）+ JSON 提取
     prompts.js   #   全部提示词：生境卡编译、孪生、归纳、复盘、假设、归因、24问、红线
     pipeline.js  #   业务流：归纳→演练→预测→回流→归因→撤销、访谈
     main.js      #   Electron 窗口 + IPC（安全基线在此）

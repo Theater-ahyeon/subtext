@@ -2,6 +2,14 @@
 
 所有重要变更记录在本文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [1.1.0] - 2026-08-31
+
+### Added —— 多格式 API 接入
+- **五种接入格式**：OpenAI 兼容（Chat Completions，覆盖 DeepSeek/Kimi/GLM/Qwen/OpenRouter/OneAPI 等网关）、Azure OpenAI（api-key 头 + 部署地址）、Anthropic Claude（Messages API，x-api-key + anthropic-version，system 独立传输与必填 max_tokens 正确处理）、Google Gemini（原生 generateContent，role 映射与 systemInstruction）、Ollama 本地模型（无需密钥，全程离线）
+- **获取模型列表**：OpenAI 兼容 / Anthropic / Gemini / Ollama 均可一键拉取并下拉选择（Gemini 自动过滤非文本模型）；Azure 部署制明确提示
+- 设置页按协议动态渲染表单（地址占位符/密钥/模型示例/说明），连接测试与错误提示按协议归一（401 密钥/404 地址模型/429 限流/超时等中文可行动提示）
+- Gemini 安全拦截场景给出 finishReason 提示；适配器为纯函数架构（build/parse 可离线单测）
+
 ## [1.0.1] - 2026-08-31
 
 第二轮对抗式审查修复（安全回归猎杀 / 产品门面 / 发布工程）。详见 [docs/round-06-second-review.md](docs/round-06-second-review.md)。

@@ -880,9 +880,49 @@ async function viewCalibration(el) {
 }
 
 /* ---------------- 视图：设置 ---------------- */
+const PROVIDER_META = {
+  mock: { label: '演示模式（离线内置样例回复）', note: '无需任何配置，可体验全部流程。' },
+  openai: {
+    label: 'OpenAI 兼容（ChatGPT / DeepSeek / Kimi / GLM / Qwen / OpenRouter / OneAPI 等网关）',
+    urlPh: '留空 = https://api.openai.com/v1；其他网关填到 /v1（自动补全 /chat/completions）',
+    modelPh: 'gpt-4o-mini / deepseek-chat / moonshot-v1-8k / glm-4.7 …',
+    key: true,
+    note: '绝大多数国产模型与中转网关都是这个格式。',
+  },
+  azure: {
+    label: 'Azure OpenAI',
+    urlPh: '完整部署地址：https://资源名.openai.azure.com/openai/deployments/部署名/chat/completions?api-version=2024-10-21',
+    modelPh: '（无需填写：部署名在地址中）',
+    key: true,
+    note: '填 Azure 资源的密钥（Azure Portal → Keys and Endpoint）。',
+  },
+  anthropic: {
+    label: 'Anthropic Claude',
+    urlPh: '留空 = https://api.anthropic.com',
+    modelPh: 'claude-sonnet-4-5 / claude-opus-4-6 …',
+    key: true,
+    note: '使用 Messages API（x-api-key 头）。',
+  },
+  gemini: {
+    label: 'Google Gemini',
+    urlPh: '留空 = https://generativelanguage.googleapis.com',
+    modelPh: 'gemini-2.5-flash / gemini-2.5-pro …',
+    key: true,
+    note: '使用 Google AI generateContent 原生协议（x-goog-api-key 头）。',
+  },
+  ollama: {
+    label: 'Ollama 本地模型（完全离线，隐私最优）',
+    urlPh: '留空 = http://localhost:11434',
+    modelPh: 'llama3.3 / qwen3:14b …（本地已 pull 的模型）',
+    key: false,
+    note: '无需密钥。数据全程不出本机——与"本地优先"红线最契合的接入方式。',
+  },
+};
+
 async function viewSettings(el) {
   const [s, info] = await Promise.all([H.settings.get(), H.appInfo()]);
   state.settings = s;
+  const meta = PROVIDER_META[s.provider] || PROVIDER_META.openai;
   el.innerHTML = `
     <div class="page-head">
       <div class="page-title">设置</div>
@@ -890,14 +930,20 @@ async function viewSettings(el) {
     </div>
     <div class="panel">
       <div class="panel-title">模型服务</div>
-      <label class="field"><span>Provider</span><select id="stProvider">
-        <option value="mock" ${s.provider === 'mock' ? 'selected' : ''}>演示模式（离线内置样例）</option>
-        <option value="openai" ${s.provider === 'openai' ? 'selected' : ''}>OpenAI 兼容接口</option>
+      <label class="field"><span>接入格式（Provider）</span><select id="stProvider">
+        ${Object.entries(PROVIDER_META).map(([k, v]) => `<option value="${k}" ${s.provider === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}
       </select></label>
-      <div id="openaiCfg" class="${s.provider === 'openai' ? '' : 'hidden'}">
-        <label class="field"><span>API 地址（Base URL）</span><input type="text" id="stUrl" value="${esc(s.baseUrl)}" placeholder="https://api.openai.com/v1 或任意兼容网关"></label>
-        <label class="field"><span>API Key ${s.hasApiKey ? '<span style="color:var(--jade)">（已配置，留空则保持不变）</span>' : ''}</span><input type="password" id="stKey" placeholder="${s.hasApiKey ? '········（已保存）' : 'sk-…'}"></label>
-        <label class="field"><span>模型</span><input type="text" id="stModel" value="${esc(s.model)}" placeholder="gpt-4o-mini / deepseek-chat / …"></label>
+      <div class="note mt8" id="provNote">${esc(meta.note || '')}</div>
+      <div id="provCfg" class="${s.provider === 'mock' ? 'hidden' : ''}">
+        <label class="field mt14"><span>API 地址（Base URL）</span><input type="text" id="stUrl" value="${esc(s.baseUrl)}" placeholder="${esc(meta.urlPh || '')}"></label>
+        <label class="field ${meta.key ? '' : 'hidden'}"><span>${esc(meta.key ? 'API Key' : '')} ${s.hasApiKey ? '<span style="color:var(--jade)">（已配置，留空则保持不变）</span>' : ''}</span>
+          <input type="password" id="stKey" placeholder="${s.hasApiKey ? '········（已保存）' : 'sk-… / AIza… / sk-ant-…'}"></label>
+        <label class="field"><span>模型</span>
+          <div class="flex"><input type="text" id="stModel" value="${esc(s.model)}" placeholder="${esc(meta.modelPh || '')}" list="modelList" style="flex:1">
+          <button class="btn sm" id="stFetchModels" data-canlist="1">获取模型列表</button></div>
+          <datalist id="modelList"></datalist>
+        </label>
+        <label class="field"><span>最大输出 Tokens（Anthropic 必填，其他协议可选）</span><input type="number" id="stMaxTok" min="256" max="65536" step="256" value="${esc(String(s.maxTokens || 2048))}"></label>
         ${s.hasApiKey && !s.keyEncrypted ? '<div class="note red mt8">⚠ 本机系统密钥服务不可用，当前 API Key 以<b>明文</b>保存在 settings.json 中。请注意保护该文件，或更换支持系统密钥服务的环境。</div>' : ''}
       </div>
       <div class="flex mt8">
@@ -919,41 +965,59 @@ async function viewSettings(el) {
       <div class="note warn mt8">红线：分析真实第三方涉及隐私，请勿导入你无权处理的对话；档案仅限本人查看，不对外共享，不用于伤害性用途；引擎内置拒绝操控类请求。</div>
     </div>
   `;
-  $('#stProvider').onchange = () => $('#openaiCfg').classList.toggle('hidden', $('#stProvider').value !== 'openai');
+  $('#stProvider').onchange = () => viewSettings(el);
   $('#stClearKey') && ($('#stClearKey').onclick = async () => {
     await H.settings.set({ apiKey: '' });
     state.settings = await H.settings.get();
     toast('已清除 API Key', 'ok');
     viewSettings(el);
   });
-  $('#stSave').onclick = async () => {
-    const patch = { provider: $('#stProvider').value };
-    if (patch.provider === 'openai') {
-      patch.baseUrl = $('#stUrl').value.trim();
-      patch.model = $('#stModel').value.trim();
-      const key = $('#stKey').value.trim();
-      if (key) patch.apiKey = key; // 留空保持已有 key
+  $('#stFetchModels').onclick = async () => {
+    // 先保存当前表单再拉取（models 请求使用已保存配置）
+    await saveSettingsFromForm(el, { silent: true });
+    const r = await guard(() => H.settings.models(), '获取模型列表…');
+    if (r) {
+      $('#modelList').innerHTML = r.models.map(m => `<option value="${esc(m)}"></option>`).join('');
+      toast(`已获取 ${r.models.length} 个模型，在模型输入框中下拉选择`, 'ok');
     }
-    await H.settings.set(patch);
-    state.settings = await H.settings.get();
-    updateModeChip();
-    toast('已保存', 'ok');
-    viewSettings(el);
   };
+  $('#stSave').onclick = () => saveSettingsFromForm(el, {});
   $('#stTest').onclick = async () => {
+    await saveSettingsFromForm(el, { silent: true });
     const r = await guard(() => H.settings.test(), '测试中…');
     if (r) toast('连接正常：' + r.reply, 'ok');
   };
 }
 
+async function saveSettingsFromForm(el, { silent } = {}) {
+  const provider = $('#stProvider').value;
+  const patch = { provider };
+  if (provider !== 'mock') {
+    patch.baseUrl = $('#stUrl').value.trim();
+    patch.model = $('#stModel').value.trim();
+    patch.maxTokens = Math.max(256, Math.min(65536, Number($('#stMaxTok').value) || 2048));
+    const keyEl = $('#stKey');
+    if (keyEl && keyEl.value.trim()) patch.apiKey = keyEl.value.trim();
+  }
+  await H.settings.set(patch);
+  state.settings = await H.settings.get();
+  updateModeChip();
+  if (!silent) {
+    toast('已保存', 'ok');
+    viewSettings(el);
+  }
+}
+
 function updateModeChip() {
   const chip = $('#modeChip');
-  if (state.settings && state.settings.provider === 'openai') {
-    chip.textContent = 'OpenAI 兼容 · ' + (state.settings.model || '未设置模型');
-    chip.style.color = 'var(--jade)';
-  } else {
+  const p = state.settings ? state.settings.provider : 'mock';
+  if (p === 'mock') {
     chip.textContent = '演示模式（离线）';
     chip.style.color = '';
+  } else {
+    const meta = PROVIDER_META[p] || { label: p };
+    chip.textContent = (meta.label || p).split('（')[0] + ' · ' + (state.settings.model || '未设模型');
+    chip.style.color = 'var(--jade)';
   }
 }
 

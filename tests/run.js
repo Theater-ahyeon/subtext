@@ -9,7 +9,7 @@ const { Store } = require('../src/main/store');
 const parser = require('../src/main/parser');
 const P = require('../src/main/prompts');
 const pipeline = require('../src/main/pipeline');
-const { extractJson, normalizeBaseUrl } = require('../src/main/llm');
+const { extractJson, normalizeBaseUrl, ADAPTERS, splitSystem } = require('../src/main/llm');
 
 let passed = 0, failed = 0;
 const failures = [];
@@ -194,6 +194,68 @@ async function main() {
     assert.strictEqual(normalizeBaseUrl('https://x.com/v1/chat/completions/'), 'https://x.com/v1/chat/completions');
     assert.strictEqual(normalizeBaseUrl('https://gw.example.com/v1/?api-key=K'), 'https://gw.example.com/v1/chat/completions?api-key=K');
     assert.strictEqual(normalizeBaseUrl('https://generativelanguage.googleapis.com/v1beta/openai'), 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+  });
+
+  console.log('== 多协议适配器 ==');
+  const MSGS = [{ role: 'system', content: '你是孪生引擎' }, { role: 'user', content: '你好' }, { role: 'assistant', content: '嗯？' }, { role: 'user', content: '在吗' }];
+  await test('anthropic 适配器：system 独立传输 + 必填 max_tokens + x-api-key 头', () => {
+    const a = ADAPTERS.anthropic.build({ settings: { baseUrl: '', apiKey: 'sk-ant-x', model: 'claude-sonnet-4-5' }, messages: MSGS, temperature: 0.5, maxTokens: 1024 });
+    assert.strictEqual(a.url, 'https://api.anthropic.com/v1/messages');
+    assert.strictEqual(a.headers['x-api-key'], 'sk-ant-x');
+    assert.strictEqual(a.headers['anthropic-version'], '2023-06-01');
+    assert.strictEqual(a.body.system, '你是孪生引擎');
+    assert.ok(!JSON.stringify(a.body.messages).includes('孪生引擎'), 'system 不得混进 messages');
+    assert.strictEqual(a.body.max_tokens, 1024);
+    assert.strictEqual(a.body.messages.length, 3);
+    assert.strictEqual(a.body.messages[0].role, 'user');
+    assert.strictEqual(ADAPTERS.anthropic.parse({ content: [{ type: 'text', text: 'A' }, { type: 'tool_use' }, { type: 'text', text: 'B' }] }), 'AB');
+  });
+  await test('gemini 适配器：URL 含模型名 + role 映射 model + systemInstruction', () => {
+    const a = ADAPTERS.gemini.build({ settings: { baseUrl: '', apiKey: 'AIza-x', model: 'gemini-2.5-flash' }, messages: MSGS, temperature: 0.5, maxTokens: 1024 });
+    assert.strictEqual(a.url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    assert.strictEqual(a.headers['x-goog-api-key'], 'AIza-x');
+    assert.strictEqual(a.body.systemInstruction.parts[0].text, '你是孪生引擎');
+    assert.deepStrictEqual(a.body.contents.map(c => c.role), ['user', 'model', 'user']);
+    assert.strictEqual(a.body.generationConfig.maxOutputTokens, 1024);
+    assert.strictEqual(ADAPTERS.gemini.parse({ candidates: [{ content: { parts: [{ text: '嗨' }, { text: '呀' }] } }] }), '嗨呀');
+    assert.ok(ADAPTERS.gemini.modelsUrl({ baseUrl: '' }).endsWith('/v1beta/models'));
+    assert.deepStrictEqual(ADAPTERS.gemini.parseModels({ models: [{ name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] }, { name: 'models/embedding-x', supportedGenerationMethods: ['embedContent'] }] }), ['gemini-2.5-flash']);
+  });
+  await test('azure 适配器：api-key 头 + 部署地址原样 + body 不含 model', () => {
+    const url = 'https://r.openai.azure.com/openai/deployments/d1/chat/completions?api-version=2024-10-21';
+    const a = ADAPTERS.azure.build({ settings: { baseUrl: url, apiKey: 'az-k', model: '' }, messages: MSGS, temperature: 0.5 });
+    assert.strictEqual(a.url, url);
+    assert.strictEqual(a.headers['api-key'], 'az-k');
+    assert.ok(!('Authorization' in a.headers));
+    assert.ok(!('model' in a.body));
+    assert.strictEqual(a.body.messages.length, 4, 'azure 走 openai 消息形态（system 保留在 messages）');
+    assert.strictEqual(ADAPTERS.azure.modelsUrl, null);
+  });
+  await test('ollama 适配器：无密钥 + /api/chat + options.temperature', () => {
+    const a = ADAPTERS.ollama.build({ settings: { baseUrl: '', apiKey: '', model: 'qwen3:14b' }, messages: MSGS, temperature: 0.6 });
+    assert.strictEqual(a.url, 'http://localhost:11434/api/chat');
+    assert.ok(!('Authorization' in a.headers));
+    assert.strictEqual(a.body.options.temperature, 0.6);
+    assert.strictEqual(a.body.stream, false);
+    assert.strictEqual(ADAPTERS.ollama.parse({ message: { content: '本地回复' } }), '本地回复');
+    assert.ok(ADAPTERS.ollama.modelsUrl({ baseUrl: '' }).endsWith('/api/tags'));
+  });
+  await test('openai 兼容适配器：网关 /v1 补全与 Bearer 头', () => {
+    const a = ADAPTERS.openai.build({ settings: { baseUrl: 'https://api.deepseek.com/v1', apiKey: 'dk-x', model: 'deepseek-chat' }, messages: MSGS, temperature: 0.7 });
+    assert.strictEqual(a.url, 'https://api.deepseek.com/v1/chat/completions');
+    assert.strictEqual(a.headers.Authorization, 'Bearer dk-x');
+    assert.strictEqual(a.body.model, 'deepseek-chat');
+    assert.strictEqual(a.body.messages.length, 4);
+  });
+  await test('splitSystem：无 system 时输出原消息', () => {
+    const { system, messages } = splitSystem([{ role: 'user', content: 'hi' }]);
+    assert.strictEqual(system, '');
+    assert.strictEqual(messages.length, 1);
+  });
+  await test('chat() 对不存在的 provider 报可读错误', async () => {
+    let msg = '';
+    try { await require('../src/main/llm').chat({ provider: 'nope' }, [{ role: 'user', content: 'x' }], {}); } catch (e) { msg = e.message; }
+    assert.ok(/不支持的 Provider/.test(msg));
   });
 
   console.log('== pipeline（mock provider 全流程） ==');

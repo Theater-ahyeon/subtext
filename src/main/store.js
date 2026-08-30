@@ -92,12 +92,14 @@ class Store {
 
   defaultSettings() {
     return {
-      provider: 'mock', // 'mock' | 'openai'
-      baseUrl: 'https://api.openai.com/v1',
+      provider: 'mock', // 'mock' | 'openai' | 'azure' | 'anthropic' | 'gemini' | 'ollama'
+      baseUrl: '',       // 留空时使用该协议的官方默认地址
       apiKey: '',
-      model: 'gpt-4o-mini',
+      apiKeyEnc: '',
+      model: '',
       temperature: 0.7,
       analysisTemperature: 0.3,
+      maxTokens: 2048,
       timeoutMs: 90000,
     };
   }
@@ -112,7 +114,7 @@ class Store {
   }
 
   // ---------- settings ----------
-  static SETTING_KEYS = ['provider', 'baseUrl', 'apiKey', 'apiKeyEnc', 'model', 'temperature', 'analysisTemperature', 'timeoutMs'];
+  static SETTING_KEYS = ['provider', 'baseUrl', 'apiKey', 'apiKeyEnc', 'model', 'temperature', 'analysisTemperature', 'maxTokens', 'timeoutMs'];
   loadSettings() {
     try { return { ...this.defaultSettings(), ...JSON.parse(fs.readFileSync(this.settingsFile(), 'utf8')) }; }
     catch { return this.defaultSettings(); }

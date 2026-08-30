@@ -326,8 +326,13 @@ handle('settings:get', () => {
 handle('settings:set', (patch) => store.saveSettings(encryptApiKey(store.loadSettings(), patch || {})));
 handle('settings:test', async () => {
   const s = effectiveSettings();
-  const reply = await chat(s, [{ role: 'user', content: '连接测试，请回复"连接正常"四个字。' }], { task: 'TWIN', temperature: 0, timeoutMs: 20000 });
+  const reply = await chat(s, [{ role: 'user', content: '连接测试，请回复"连接正常"四个字。' }], { task: 'TWIN', temperature: 0, timeoutMs: 25000 });
   return { reply: String(reply).slice(0, 100) };
+});
+handle('settings:models', async () => {
+  const s = effectiveSettings();
+  const list = await require('./llm').fetchModels(s);
+  return { models: list.slice(0, 100) };
 });
 
 // ---------- export / import card ----------

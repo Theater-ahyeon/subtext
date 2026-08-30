@@ -1,10 +1,199 @@
 'use strict';
 /**
- * LLM Provider 抽象层。
- * - openai：任意 OpenAI 兼容接口（baseUrl + key + model）
- * - mock：确定性演示模式，离线可跑通全部流程
- * opts.task 用于 mock 分流，真实 provider 忽略。
+ * LLM Provider 抽象层 —— 多协议适配器架构。
+ * 支持格式：
+ *  - openai   ：OpenAI Chat Completions 兼容（DeepSeek/Kimi/GLM/Qwen/OpenRouter/OneAPI/新版网关等）
+ *  - azure    ：Azure OpenAI（部署 URL + api-key 头）
+ *  - anthropic：Anthropic Claude Messages API（x-api-key + anthropic-version）
+ *  - gemini   ：Google AI generateContent（x-goog-api-key）
+ *  - ollama   ：Ollama 本地模型（/api/chat，无需密钥）
+ *  - mock     ：离线演示模式
+ * 每个适配器导出纯函数 build()/parse()，可在无网络环境单测。
  */
+
+const DEFAULT_BASE = {
+  openai: 'https://api.openai.com/v1',
+  azure: '',
+  anthropic: 'https://api.anthropic.com',
+  gemini: 'https://generativelanguage.googleapis.com',
+  ollama: 'http://localhost:11434',
+};
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+function splitQuery(url) {
+  const qIdx = url.indexOf('?');
+  if (qIdx === -1) return [url, ''];
+  return [url.slice(0, qIdx), url.slice(qIdx)];
+}
+
+/** OpenAI 兼容 URL 归一化（补 /v1/chat/completions；容忍尾斜杠、query、Gemini 风格 /openai 结尾） */
+function normalizeBaseUrl(url) {
+  let u = (url || '').trim().replace(/\/+$/, '');
+  if (!u) return '';
+  if (/\/openai\/deployments\//.test(u) || /azure\.com/i.test(u)) {
+    throw new Error('这是 Azure 部署地址，请把 Provider 切换为 Azure OpenAI 并将部署完整地址填入 API 地址');
+  }
+  const qIdx = u.indexOf('?');
+  let query = '';
+  if (qIdx !== -1) { query = u.slice(qIdx); u = u.slice(0, qIdx).replace(/\/+$/, ''); }
+  let out;
+  if (u.endsWith('/chat/completions')) out = u;
+  else if (u.endsWith('/openai')) out = u + '/chat/completions'; // Gemini OpenAI 兼容层
+  else if (/\/v\d+(beta)?$/.test(u)) out = u + '/chat/completions';
+  else out = u + '/v1/chat/completions';
+  return out + query;
+}
+
+/** 拆出 system 提示词与对话消息（供 system 独立传输的协议使用） */
+function splitSystem(messages) {
+  const systemParts = [];
+  const rest = [];
+  for (const m of messages) {
+    if (m.role === 'system') systemParts.push(m.content);
+    else rest.push(m);
+  }
+  return { system: systemParts.join('\n\n'), messages: rest };
+}
+
+const ADAPTERS = {
+  openai: {
+    label: 'OpenAI 兼容',
+    keyLabel: 'API Key',
+    needsKey: true,
+    build({ settings, messages, temperature, maxTokens }) {
+      const url = normalizeBaseUrl(settings.baseUrl || DEFAULT_BASE.openai);
+      const body = { model: settings.model, messages, temperature, stream: false };
+      if (maxTokens) body.max_tokens = maxTokens;
+      return { url, headers: { ...JSON_HEADERS, 'Authorization': 'Bearer ' + (settings.apiKey || '') }, body };
+    },
+    parse(data) {
+      const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (!content) throw new Error('API 返回为空');
+      return content;
+    },
+    modelsUrl(settings) {
+      const [base, query] = splitQuery((settings.baseUrl || DEFAULT_BASE.openai).replace(/\/+$/, ''));
+      const u = base.replace(/\/chat\/completions$/, '');
+      return (/\/v\d+(beta)?$/.test(u) ? u : u + '/v1') + '/models' + query;
+    },
+    parseModels(data) { return (data && data.data || []).map(m => m.id).filter(Boolean); },
+    modelsHeaders(settings) { return { 'Authorization': 'Bearer ' + (settings.apiKey || '') }; },
+  },
+
+  azure: {
+    label: 'Azure OpenAI',
+    keyLabel: 'API Key（Azure 资源密钥）',
+    needsKey: true,
+    build({ settings, messages, temperature, maxTokens }) {
+      const url = (settings.baseUrl || '').trim();
+      if (!url) throw new Error('请填入 Azure 部署的完整 Chat Completions 地址（含 api-version 查询参数）');
+      const body = { messages, temperature, stream: false };
+      if (maxTokens) body.max_tokens = maxTokens;
+      return { url, headers: { ...JSON_HEADERS, 'api-key': settings.apiKey || '' }, body };
+    },
+    parse(data) {
+      const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (!content) throw new Error('API 返回为空');
+      return content;
+    },
+    modelsUrl: null, // 部署制，无模型列表
+  },
+
+  anthropic: {
+    label: 'Anthropic Claude',
+    keyLabel: 'API Key（sk-ant-…）',
+    needsKey: true,
+    build({ settings, messages, temperature, maxTokens }) {
+      const base = (settings.baseUrl || DEFAULT_BASE.anthropic).trim().replace(/\/+$/, '');
+      const url = base.endsWith('/v1/messages') ? base : base + '/v1/messages';
+      const { system, messages: rest } = splitSystem(messages);
+      const body = {
+        model: settings.model,
+        max_tokens: maxTokens || 2048, // Anthropic 必填
+        temperature,
+        messages: rest,
+        stream: false,
+      };
+      if (system) body.system = system;
+      return { url, headers: { ...JSON_HEADERS, 'x-api-key': settings.apiKey || '', 'anthropic-version': '2023-06-01' }, body };
+    },
+    parse(data) {
+      const parts = data && data.content || [];
+      const text = parts.filter(p => p && p.type === 'text').map(p => p.text).join('');
+      if (!text) throw new Error('API 返回为空');
+      return text;
+    },
+    modelsUrl(settings) {
+      const base = (settings.baseUrl || DEFAULT_BASE.anthropic).trim().replace(/\/+$/, '');
+      return base.endsWith('/v1') ? base + '/models' : base + '/v1/models';
+    },
+    parseModels(data) { return (data && data.data || []).map(m => m.id).filter(Boolean); },
+    modelsHeaders(settings) { return { 'x-api-key': settings.apiKey || '', 'anthropic-version': '2023-06-01' }; },
+  },
+
+  gemini: {
+    label: 'Google Gemini',
+    keyLabel: 'API Key（AIza…）',
+    needsKey: true,
+    build({ settings, messages, temperature, maxTokens }) {
+      const base = (settings.baseUrl || DEFAULT_BASE.gemini).trim().replace(/\/+$/, '');
+      const model = (settings.model || '').trim();
+      if (!model) throw new Error('请填写 Gemini 模型名（如 gemini-2.5-flash）');
+      const url = base + '/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+      const { system, messages: rest } = splitSystem(messages);
+      const body = {
+        contents: rest.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+        generationConfig: { temperature, maxOutputTokens: maxTokens || 2048 },
+      };
+      if (system) body.systemInstruction = { parts: [{ text: system }] };
+      return { url, headers: { ...JSON_HEADERS, 'x-goog-api-key': settings.apiKey || '' }, body };
+    },
+    parse(data) {
+      const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts || [];
+      const text = parts.map(p => p.text || '').join('');
+      if (!text) {
+        const reason = data && data.candidates && data.candidates[0] && data.candidates[0].finishReason;
+        throw new Error('API 返回为空' + (reason ? `（finishReason: ${reason}，可能被安全策略拦截）` : ''));
+      }
+      return text;
+    },
+    modelsUrl(settings) {
+      const base = (settings.baseUrl || DEFAULT_BASE.gemini).trim().replace(/\/+$/, '');
+      return base + '/v1beta/models';
+    },
+    parseModels(data) {
+      return (data && data.models || [])
+        .filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
+        .map(m => String(m.name || '').replace(/^models\//, ''))
+        .filter(Boolean);
+    },
+    modelsHeaders(settings) { return { 'x-goog-api-key': settings.apiKey || '' }; },
+  },
+
+  ollama: {
+    label: 'Ollama 本地模型',
+    keyLabel: null,
+    needsKey: false,
+    build({ settings, messages, temperature }) {
+      const base = (settings.baseUrl || DEFAULT_BASE.ollama).trim().replace(/\/+$/, '');
+      const url = base + '/api/chat';
+      const body = { model: settings.model, messages, stream: false, options: { temperature } };
+      return { url, headers: { ...JSON_HEADERS }, body };
+    },
+    parse(data) {
+      const content = data && data.message && data.message.content;
+      if (!content) throw new Error('API 返回为空');
+      return content;
+    },
+    modelsUrl(settings) {
+      const base = (settings.baseUrl || DEFAULT_BASE.ollama).trim().replace(/\/+$/, '');
+      return base + '/api/tags';
+    },
+    parseModels(data) { return (data && data.models || []).map(m => m.name).filter(Boolean); },
+    modelsHeaders() { return {}; },
+  },
+};
 
 const MOCK_REPLY = {
   TWIN: '（她抬起头，把手机扣在桌上）「……所以你今天找我，是有事吧？」',
@@ -45,7 +234,10 @@ const MOCK_REPLY = {
       { layer: 'temperament', text: '面对不确定的请求，往往先确认目的再决定投入程度', epistemic: 'inference', refs: ['E1'], confidence: 0.7 },
       { layer: 'expression', text: '回复偏短，问题驱动，很少先寒暄', epistemic: 'inference', refs: ['E1', 'E2'], confidence: 0.6 },
     ],
-    blanks: ['她作息与工作压力来源', '她对哪些话题明显更有兴趣'],
+    blanks: [
+      { text: '她作息与工作压力来源', layer: 'life' },
+      { text: '她对哪些话题明显更有兴趣', layer: 'temperament' },
+    ],
   }),
   INTERVIEW_PROBE: '这个说法具体会表现成什么行为？例如她最近一次让你产生这种感觉，是发生了什么？',
   INTERVIEW_SUMMARY: '## 中途小结（演示模式）\n- 已确定：她重视约定\n- 待确认：核心信念层尚未触及',
@@ -78,45 +270,35 @@ function mockRespond(messages, opts = {}) {
   return MOCK_REPLY.TWIN;
 }
 
-function normalizeBaseUrl(url) {
-  let u = (url || '').trim().replace(/\/+$/, '');
-  if (!u) return '';
-  if (/\/openai\/deployments\//.test(u) || /azure\.com/i.test(u)) {
-    throw new Error('暂不支持 Azure 原生端点，请使用 OpenAI 兼容网关地址（以 /v1 结尾或包含 /v1/chat/completions）');
-  }
-  // 带查询参数的地址（如 ?api-key=…）：路径补全后把查询串接回
-  const qIdx = u.indexOf('?');
-  let query = '';
-  if (qIdx !== -1) { query = u.slice(qIdx); u = u.slice(0, qIdx).replace(/\/+$/, ''); }
-  let out;
-  if (u.endsWith('/chat/completions')) out = u;
-  else if (u.endsWith('/openai')) out = u + '/chat/completions'; // Gemini OpenAI 兼容层
-  else if (/\/v\d+(beta)?$/.test(u)) out = u + '/chat/completions';
-  else out = u + '/v1/chat/completions';
-  return out + query;
+/** 从各协议错误响应体里提取可读信息 */
+function extractProviderError(provider, bodyText) {
+  try {
+    const v = JSON.parse(bodyText);
+    if (v && v.error) {
+      if (typeof v.error === 'string') return v.error;
+      if (v.error.message) return v.error.message;
+    }
+    if (v && v.message) return v.message;
+  } catch { /* 原样截断返回 */ }
+  return bodyText.slice(0, 200);
 }
 
-async function chat(settings, messages, opts = {}) {
-  const temperature = typeof opts.temperature === 'number' ? opts.temperature : settings.temperature;
-  const timeoutMs = opts.timeoutMs || settings.timeoutMs || 90000;
-  if (settings.provider === 'mock') {
-    await new Promise(r => setTimeout(r, 150));
-    return mockRespond(messages, opts);
-  }
-  const url = normalizeBaseUrl(settings.baseUrl);
-  if (!url) throw new Error('API 地址为空，请到设置页配置');
-  if (!settings.apiKey) throw new Error('未配置 API Key，请到设置页配置，或切换到演示模式');
+function statusHint(status) {
+  if (status === 401 || status === 403) return '：密钥无效或无权限，请检查 API Key';
+  if (status === 404) return '：地址或模型名不存在，请检查 API 地址与模型名';
+  if (status === 413 || status === 400) return '：内容可能过长或参数有误，建议结束本场演练后新开一场，或减少素材';
+  if (status === 429) return '：触发速率限制，稍后再试';
+  if (status >= 500) return '：服务商暂时故障，稍后再试';
+  return '';
+}
+
+async function httpJson(url, headers, body, timeoutMs) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     let res;
     try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + settings.apiKey },
-        body: JSON.stringify({ model: settings.model, messages, temperature, stream: false }),
-        signal: ctrl.signal,
-      });
+      res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
     } catch (err) {
       if (err && (err.name === 'AbortError' || /abort/i.test(String(err)))) {
         throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）。可在设置中调大超时，或检查网络/代理。`);
@@ -124,19 +306,55 @@ async function chat(settings, messages, opts = {}) {
       const code = err && err.cause && err.cause.code ? err.cause.code : '';
       throw new Error('网络请求失败' + (code ? '（' + code + '）' : '') + '：请检查网络连接与 API 地址');
     }
+    const text = await res.text().catch(() => '');
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      let hint = '';
-      if (res.status === 401 || res.status === 403) hint = '：请检查 API Key';
-      else if (res.status === 404) hint = '：请检查 API 地址与模型名';
-      else if (res.status === 413 || res.status === 400) hint = '：内容可能过长，建议结束本场演练后新开一场，或减少素材';
-      else if (res.status === 429) hint = '：触发速率限制，稍后再试';
-      throw new Error(`API ${res.status}${hint} ${body.slice(0, 200)}`);
+      throw new Error(`API ${res.status}${statusHint(res.status)} ${extractProviderError('generic', text)}`);
     }
-    const data = await res.json();
-    const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if (!content) throw new Error('API 返回为空');
-    return content;
+    return JSON.parse(text);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * 统一入口：按 settings.provider 分发到对应协议适配器。
+ * opts: { temperature, maxTokens, timeoutMs, task(mock 用) }
+ */
+async function chat(settings, messages, opts = {}) {
+  const temperature = typeof opts.temperature === 'number' ? opts.temperature : settings.temperature;
+  const timeoutMs = opts.timeoutMs || settings.timeoutMs || 90000;
+  if (settings.provider === 'mock') {
+    await new Promise(r => setTimeout(r, 150));
+    return mockRespond(messages, opts);
+  }
+  const adapter = ADAPTERS[settings.provider];
+  if (!adapter) throw new Error(`不支持的 Provider：${settings.provider}，请到设置页重新选择`);
+  if (adapter.needsKey && !settings.apiKey) {
+    throw new Error(`未配置 ${adapter.label} 的 API Key，请到设置页填写，或切换到演示模式`);
+  }
+  const { url, headers, body } = adapter.build({ settings, messages, temperature, maxTokens: opts.maxTokens || settings.maxTokens });
+  const data = await httpJson(url, headers, body, timeoutMs);
+  return adapter.parse(data);
+}
+
+/** 拉取模型列表（azure 部署制不支持） */
+async function fetchModels(settings) {
+  const adapter = ADAPTERS[settings.provider];
+  if (!adapter || !adapter.modelsUrl) throw new Error('该 Provider 不支持拉取模型列表（Azure 为部署制，请直接填部署地址）');
+  const url = adapter.modelsUrl(settings);
+  const headers = adapter.modelsHeaders(settings);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const res = await fetch(url, { headers, signal: ctrl.signal });
+    const text = await res.text().catch(() => '');
+    if (!res.ok) throw new Error(`API ${res.status}${statusHint(res.status)} ${extractProviderError('generic', text)}`);
+    const list = adapter.parseModels(JSON.parse(text));
+    if (!list.length) throw new Error('服务商返回了空模型列表');
+    return list;
+  } catch (err) {
+    if (err && err.name === 'AbortError') throw new Error('拉取模型列表超时');
+    throw err;
   } finally {
     clearTimeout(timer);
   }
@@ -151,7 +369,6 @@ function extractJson(text) {
   let m;
   while ((m = fenceRe.exec(text)) !== null) candidates.push(m[1].trim());
   candidates.push(text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
-  // 后→前尝试：模型常先回显格式示例再给真实结果
   for (let i = candidates.length - 1; i >= 0; i--) {
     const v = tryParse(candidates[i]);
     if (v) return v;
@@ -171,4 +388,7 @@ function extractJson(text) {
   throw new Error('LLM 返回的 JSON 无法解析：' + String(text).slice(0, 160));
 }
 
-module.exports = { chat, extractJson, normalizeBaseUrl, mockRespond };
+module.exports = {
+  chat, extractJson, normalizeBaseUrl, mockRespond, extractProviderError,
+  ADAPTERS, DEFAULT_BASE, fetchModels, splitSystem,
+};

@@ -75,5 +75,6 @@ contextBridge.exposeInMainWorld('habitat', {
     get: () => invoke('settings:get'),
     set: (p) => invoke('settings:set', p),
     test: () => invoke('settings:test'),
+    models: () => invoke('settings:models'),
   },
 });
