@@ -29,7 +29,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1440, height: 920, minWidth: 1080, minHeight: 700,
     backgroundColor: '#f6efe4',
-    title: '彩排 · Rehearsal',
+    title: '知微 · Subtext',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),

@@ -1,4 +1,4 @@
-# 彩排 · Rehearsal
+# 知微 · Subtext
 
 > 难开口的话，先彩排一遍。为重要对话做练习的本地工具：整理你对 TA 的了解，和「TA 的模拟」把那段话先说一遍，再用真实反馈修正理解。**本地优先，只辅助理解与表达，不提供操控。**
 
@@ -11,7 +11,7 @@
 
 面对一场重要的对话（道歉、表白、化解冷战、谈薪、摊牌），你有没有想过"如果能先排练一遍就好了"？
 
-**彩排**做的事：
+**知微**做的事：
 
 1. **整理你对 TA 的了解** —— 导入聊天记录（或手动存证 / 通过 24 问访谈口述），AI 归纳出一份**理解卡**：基础信息（TA 站在哪里）、生活结构（TA 长期能做什么）、人物性情（TA 怎样理解事情）、场景表达（TA 如何开口与行动）。
 2. **和「TA 的模拟」彩排** —— 选一个场景开始彩排。模拟由理解卡与事件记忆生成：卡越准、记越多，模拟越接近。TA 可以沉默、追问、拒绝、继续过自己的日子。
@@ -28,8 +28,8 @@
 
 | 系统 | 文件 | 状态 |
 |---|---|---|
-| Windows | `Rehearsal Setup <版本>.exe`（NSIS 安装向导）/ `*.zip`（便携版） | ✅ 已提供 |
-| macOS | `Rehearsal-<版本>.dmg`（Intel 与 Apple Silicon） | ⏳ 由 CI 构建，见 [docs/enable-ci.md](docs/enable-ci.md)（三条命令启用） |
+| Windows | `Subtext Setup <版本>.exe`（NSIS 安装向导）/ `*.zip`（便携版） | ✅ 已提供 |
+| macOS | `Subtext-<版本>.dmg`（Intel 与 Apple Silicon） | ⏳ 由 CI 构建，见 [docs/enable-ci.md](docs/enable-ci.md)（三条命令启用） |
 | Linux | `Rehearsal-<版本>.AppImage` / `*.deb` | ⏳ 同上 |
 
 > 安装包未做代码签名（个人开源项目），Windows SmartScreen / macOS Gatekeeper 可能提示，选择"仍要运行"即可。
@@ -53,7 +53,7 @@
 - 设置页可一键「获取模型列表」直接下拉选择；连接测试逐步排查（密钥/地址/限流均有中文提示）。
 - 主流中转网关（OneAPI/NewAPI/SillyTavern 反代等）一律选 OpenAI 兼容格式。
 - **事件记忆向量化**支持单独配置 Embedding 来源（OpenAI 兼容 / Ollama / Gemini）；选择 Ollama（如 `nomic-embed-text`、`bge-m3`）可全程不出本机。
-- 最在意隐私的搭配：**Ollama 本地模型 + 彩排本地存储 = 全程不出本机**。
+- 最在意隐私的搭配：**Ollama 本地模型 + 知微本地存储 = 全程不出本机**。
 
 ## 功能总览
 
@@ -106,8 +106,8 @@
 ## 开发
 
 ```bash
-git clone https://github.com/Theater-ahyeon/rehearsal.git
-cd rehearsal
+git clone https://github.com/Theater-ahyeon/subtext.git
+cd subtext
 npm install          # npmmirror 镜像配置见 .npmrc
 npm start            # 启动应用（演示模式）
 npm run web          # 或以纯 Web 宿主运行（127.0.0.1:4173，与桌面版共用数据目录）

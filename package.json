@@ -1,7 +1,7 @@
 {
-  "name": "rehearsal",
-  "version": "1.2.0",
-  "description": "彩排 Rehearsal —— 为重要对话做练习的本地工具：整理你对 TA 的了解，和「TA 的模拟」把那段话先说一遍，再用真实反馈修正理解。",
+  "name": "subtext",
+  "version": "1.2.1",
+  "description": "知微 Subtext —— 见微知著：为重要对话做练习的本地工具。整理你对 TA 的了解，从只言片语里读懂一个人，和「TA 的模拟」先把那段话说一遍，再用真实反馈修正理解。",
   "main": "src/main/main.js",
   "author": "Theater-ahyeon",
   "license": "MIT",

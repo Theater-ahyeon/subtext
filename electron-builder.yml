@@ -1,5 +1,5 @@
 appId: com.theater-ahyeon.rehearsal
-productName: Rehearsal
+productName: Subtext
 copyright: Copyright © 2026 Theater-ahyeon (MIT)
 
 directories:
@@ -29,8 +29,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: 彩排
-  uninstallDisplayName: 彩排 Rehearsal
+  shortcutName: 知微
+  uninstallDisplayName: 知微 Subtext
 
 mac:
   icon: build/icon.png

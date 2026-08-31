@@ -1,6 +1,6 @@
 'use strict';
 /**
- * 彩排 · Web 宿主：把与 Electron 共享的业务路由（api-core）以本地 HTTP 服务暴露。
+ * 知微 · Web 宿主：把与 Electron 共享的业务路由（api-core）以本地 HTTP 服务暴露。
  *
  *   node web/server.js [--port 4173] [--data <数据目录>]
  *
@@ -139,7 +139,7 @@ const server = http.createServer(async (req, res) => {
 
 // 仅本机回环地址：该服务无鉴权，禁止对局域网开放
 server.listen(PORT, '127.0.0.1', () => {
-  console.log('彩排 · Web 宿主已启动');
+  console.log('知微 · Web 宿主已启动');
   console.log('  地址:     http://127.0.0.1:' + PORT);
   console.log('  数据目录: ' + DATA_DIR);
   console.log('  注意:     与桌面版共用档案时，请勿同时运行两者并写入');

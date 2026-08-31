@@ -2,6 +2,13 @@
 
 所有重要变更记录在本文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [1.2.1] - 2026-08-31
+
+### Changed —— 品牌更名：知微 Subtext
+- 产品名「彩排 Rehearsal」升级为「**知微 Subtext**」——见微知著：从只言片语读懂一个人；Subtext（言外之意）即分析内核
+- 「彩排」保留为动作词（开始彩排 / 历史彩排 / 彩排场次），品牌层（标题/包名/安装包/仓库）全部切换
+- 仓库更名为 [rehearsal → subtext]，数据目录继续钉住不变，老档案无感延续
+
 ## [1.2.0] - 2026-08-31
 
 ### Changed —— 产品更名：彩排 Rehearsal
