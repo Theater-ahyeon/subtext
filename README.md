@@ -68,7 +68,7 @@
 
 | 模块 | 说明 |
 |---|---|
-| **导入** | 支持 [留痕 MemoTrace](https://github.com/LC044/MemoTrace) / WeChatMsg 的 JSON·CSV·TXT、QQ 导出工具的时间戳 TXT、微信合并转发复制文本、通用 JSON/JSONL、自由粘贴。解析完全在本机，支持"我的昵称"标记本人、GBK 自动检测 |
+| **导入** | 对齐 [ChatLab](https://github.com/ChatLab/ChatLab) 全系平台：**WhatsApp / LINE / Telegram / Discord / Instagram / Google Chat / iMessage(CSV) / QQ / 微信**（留痕 MemoTrace JSON·CSV·TXT、微信合并转发），外加通用 JSON/JSONL/CSV 与自由粘贴。解析完全在本机，支持标记本人、GBK 自动检测 |
 | **原话库** | 所有推断的唯一事实来源。只存证不评论；每条证据有编号（E#），AI 的归纳必须引用编号 |
 | **理解卡** | 四层认知条目，每条带认识层级（事实/推断/空白）、来源（证据/用户陈述/AI推断）、把握度；易过期信息只进"动态状态"层；发给 AI 的最小卡片可预览、可导出 JSON |
 | **24 问** | 人物观察版的结构化口述访谈：核心特质收敛 → 分化与反向 → 信念分层 → 情绪ABC → 循环与决策。抽象回答会被追问"具体会怎么做"；跳过=暂未确定；最终整合可勾选写入理解卡 |

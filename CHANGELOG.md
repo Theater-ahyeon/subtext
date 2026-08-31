@@ -2,6 +2,20 @@
 
 所有重要变更记录在本文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [1.2.2] - 2026-08-31
+
+### Added —— 导入格式对齐 ChatLab 全系平台
+- **新增七种国际平台导入格式**（解析规格对齐 [ChatLab](https://github.com/ChatLab/ChatLab) 源码）：
+  - WhatsApp 官方导出 TXT（安卓/iOS 两种行式、AM/PM 与 上午/下午、多行合并、群系统事件跳过、day-first/month-first 自适应）
+  - LINE 官方导出 TXT（TSV 与 App 文本两种形态、日期行归属、[照片] 等媒体标记保留）
+  - Telegram Desktop 导出 JSON（单聊天/多聊天取最多一路、text 数组聚合、service 跳过）
+  - Discord：DiscordChatExporter 的 JSON / CSV / TXT 三种
+  - Instagram 官方数据包 JSON（逆序反转、Latin-1 乱码迭代修复）
+  - Google Chat Takeout JSON（中英文本地化日期 + UTC 偏移确定性解析）
+  - iMessage：含 is_from_me 列的 CSV 导出
+- 通用解析增强：sender/creator 对象浅解包、author/created_date/is_from_me 等字段别名
+- 新增 10 项导入格式单测（总 66 项）
+
 ## [1.2.1] - 2026-08-31
 
 ### Changed —— 品牌更名：知微 Subtext

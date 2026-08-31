@@ -37,9 +37,16 @@ QQ TXT：2024-01-01 12:00:00 她的昵称
         <button class="btn" id="impFile">选择文件并导入</button>
       </div>
       <details class="panel" data-glow>
-        <summary class="panel-title" style="margin:0;cursor:pointer">格式对照说明 <span class="muted small" style="font-weight:400">（点击展开）</span></summary>
+        <summary class="panel-title" style="margin:0;cursor:pointer">格式对照说明 <span class="muted small" style="font-weight:400">（点击展开 · 支持 ChatLab 全系平台）</span></summary>
         <div class="report small mt14">
           <ul>
+            <li><strong>WhatsApp 官方导出 TXT</strong>：安卓（3/1/25, 21:30 - 昵称: 内容）与 iOS（[16/03/25, 21:30:12] 昵称: 内容）两种行式，支持 上午/下午/AM/PM、多行消息；群系统事件自动跳过</li>
+            <li><strong>LINE 官方导出 TXT</strong>：TSV 形态（时间\t昵称\t内容）与 App 文本形态（昵称行 + 内容 + 独立时间行收尾），[照片]/[语音]/[视频] 等标记保留</li>
+            <li><strong>Telegram 导出 JSON</strong>：Telegram Desktop 导出的 result.json（单聊天 name+messages / 多聊天 chats 取消息最多的一路）；text 数组自动聚合，service 消息跳过</li>
+            <li><strong>Discord 导出</strong>：DiscordChatExporter 的 JSON（guild+channel+messages）/ CSV / TXT（[01-Mar-25 12:44 PM] 昵称 行式）三种均支持</li>
+            <li><strong>Instagram 官方数据包 JSON</strong>：participants+messages 结构（自动反转正序、自动修复 Latin-1 乱码）；一次导入一个 messages JSON 文件</li>
+            <li><strong>Google Chat Takeout JSON</strong>：messages 数组（creator+created_date），中英文本地化日期（2025年3月1日 下午7:02 / Mar 1, 2025, 7:02 PM）与 UTC 偏移均可解析</li>
+            <li><strong>iMessage</strong>：导出为含 Date / 发送者 / Text 列的 CSV（is_from_me 列可标记本人）即可识别</li>
             <li><strong>留痕 MemoTrace JSON</strong>：字段 sender / nick / msg / CreateTime / is_sender —— 自动识别</li>
             <li><strong>WeChatMsg CSV</strong>：表头含 StrContent / SenderName / CreateTime 等 —— 自动识别</li>
             <li><strong>QQ 导出 TXT</strong>：形如 <code>2024-01-01 12:00:00 昵称(QQ号)\\n内容</code> —— 自动识别</li>

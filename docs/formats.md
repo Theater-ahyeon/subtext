@@ -61,3 +61,15 @@
 - 图片/语音/表情包消息以 `[图片]` 等占位符保留（文本分析主要依据文字内容）。
 - 撤回消息、引用回复等特殊消息类型按原始文本处理。
 - 识别率依赖原始导出质量；导入后请在「原话库」抽查，异常条目可单条删除。
+
+## 国际平台（对齐 ChatLab，v1.2.2 起支持）
+
+| 平台 | 格式 | 说明 |
+|---|---|---|
+| WhatsApp | 官方导出 TXT | 安卓 `d/m/yy, HH:MM - 昵称: 内容` 与 iOS `[d/m/yy, HH:MM:SS] 昵称: 内容`；day-first 优先、AM/PM 与 上午/下午 均可、多行消息合并、群系统事件跳过 |
+| LINE | 官方导出 TXT | TSV（`时间 TAB 昵称 TAB 内容`）与 App 文本（昵称行+内容+时间行收尾）两种形态；`2025.03.01 Monday` 日期行归属 |
+| Telegram | Desktop 导出 JSON | 单聊天（name+messages）与多聊天（chats，取消息最多一路）；text 数组聚合、service 消息跳过 |
+| Discord | DiscordChatExporter JSON / CSV / TXT | JSON 需 guild+channel+messages；TXT 为 `[01-Mar-25 12:44 PM] 昵称` 行式，分页符自动剥离 |
+| Instagram | 官方数据包 JSON | participants+messages（timestamp_ms、最新在前自动反转）；Latin-1 乱码迭代修复 |
+| Google Chat | Takeout JSON | messages[].creator/created_date/text；中英文本地化日期 + UTC 偏移确定性解析 |
+| iMessage | CSV 导出 | 含 Date/发送者/Text 列的 CSV（如 iMazing 导出），is_from_me=1 标记本人 |

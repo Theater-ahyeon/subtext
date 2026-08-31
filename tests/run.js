@@ -657,6 +657,139 @@ async function main() {
     store9.deletePerson(b9.id);
   });
 
+
+  // ================= ChatLab 系导入格式 =================
+  console.log('== 国际平台导入 ==');
+  await test('WhatsApp TXT：安卓 day-first + 续行 + 系统行跳过 + 12h 制', () => {
+    const t = [
+      '3/1/25, 21:30 - Alice: 你好呀',
+      '后续第二行',
+      '4/1/25, 09:12 - Bob: 早上好',
+      '4/1/25, 09:13 - Bob: 消息和通话已进行端到端加密',
+      '4/1/25, 09:14 - Bob: [图片]',
+      '4/1/25, 下午9:15 - Alice: 收到',
+    ].join('\n');
+    const r = parser.parseAuto(t, { selfName: 'Bob' });
+    assert.strictEqual(r.format, 'whatsapp');
+    assert.strictEqual(r.messages.length, 4, '系统行不计入');
+    const first = r.messages[0];
+    assert.strictEqual(first.ts, '2025-01-03T21:30:00', 'day-first：3/1/25 → 1月3日');
+    assert.ok(first.text.includes('后续第二行'), '续行应并入上一条');
+    assert.strictEqual(r.messages[1].isSelf, true, 'selfName 标记本人');
+    assert.strictEqual(r.messages[3].ts.slice(11, 13), '21', '下午9点应为 21 点');
+  });
+  await test('WhatsApp TXT：iOS 方括号变体', () => {
+    const t = '[16/03/25, 21:30:12] Alice: iOS 版本\n[16/03/25, 21:31:00] Alice: 第二条';
+    const r = parser.parseAuto(t, {});
+    assert.strictEqual(r.format, 'whatsapp');
+    assert.strictEqual(r.messages.length, 2);
+    assert.strictEqual(r.messages[0].ts, '2025-03-16T21:30:12');
+  });
+  await test('LINE TXT：TSV 形态 + 日期行', () => {
+    const t = [
+      '[LINE] Alice',
+      '2025.03.01 Monday',
+      '下午12:05\tBob\tHello',
+      '下午12:06\tAlice\tHi',
+      '下午12:07\tBob\t[照片]',
+    ].join('\n');
+    const r = parser.parseAuto(t, {});
+    assert.strictEqual(r.format, 'line');
+    assert.strictEqual(r.messages.length, 3);
+    assert.strictEqual(r.messages[0].sender, 'Bob');
+    assert.ok(r.messages[0].ts.startsWith('2025-03-01T12:05'), 'pm 12:05 → 12:05');
+    assert.strictEqual(r.messages[2].text, '[图片]');
+  });
+  await test('LINE TXT：官方 App 形态（发送者行 + 内容 + 独立时间行收尾）', () => {
+    const t = [
+      '[LINE] Alice',
+      'Chat history with Bob',
+      '2025.03.01 Monday',
+      '',
+      'Bob',
+      'Hello',
+      '',
+      '下午12:05',
+      '',
+      'Alice',
+      'Hi',
+      '',
+      '下午12:06',
+    ].join('\n');
+    const r = parser.parseAuto(t, {});
+    assert.strictEqual(r.format, 'line');
+    assert.strictEqual(r.messages.length, 2);
+    assert.strictEqual(r.messages[0].sender, 'Bob');
+    assert.strictEqual(r.messages[0].text, 'Hello');
+  });
+  await test('Telegram JSON：text 数组聚合 + service 消息跳过', () => {
+    const j = JSON.stringify({
+      name: 'Alice',
+      messages: [
+        { id: 1, type: 'message', date: '2025-03-01T12:00:00', from: 'Alice', text: ['你好，', { type: 'link', text: '链接' }] },
+        { id: 2, type: 'service', date: '2025-03-01T12:01:00', action: ' joined the group' },
+        { id: 3, type: 'message', date: '2025-03-01T12:02:00', from: 'Bob', text: '好的' },
+      ],
+    });
+    const r = parser.parseAuto(j, {});
+    assert.strictEqual(r.format, 'telegram');
+    assert.strictEqual(r.messages.length, 2);
+    assert.strictEqual(r.messages[0].text, '你好，链接');
+    assert.strictEqual(r.messages[0].sender, 'Alice');
+  });
+  await test('Instagram JSON：乱码修复 + 逆序反转 + 媒体占位', () => {
+    const j = JSON.stringify({
+      participants: [{ name: 'Alice' }],
+      messages: [
+        { sender_name: 'Alice', timestamp_ms: 1735725600000, content: '\u00e4\u00bd\u00a0\u00e5\u00a5\u00bd' },
+        { sender_name: 'Bob', timestamp_ms: 1735729200000, photos: [{ uri: 'x.jpg' }] },
+        { sender_name: 'Bob', timestamp_ms: 1735732800000, content: '\u00e5\u00a5\u00bd\u00e7\u009a\u0084' },
+      ],
+    });
+    const r = parser.parseAuto(j, {});
+    assert.strictEqual(r.format, 'instagram');
+    assert.strictEqual(r.messages.length, 3);
+    assert.ok(r.messages[0].ts < r.messages[2].ts, '应为正序');
+    assert.ok(r.messages[0].text.includes('你'), '乱码应修复为中文: ' + r.messages[0].text);
+    assert.strictEqual(r.messages[1].text, '[图片]');
+  });
+  await test('Discord DCE JSON：guild+channel+messages', () => {
+    const j = JSON.stringify({
+      guild: { id: 'g', name: 'G' }, channel: { id: 'c', name: 'general' },
+      messages: [{ id: '1', timestamp: '2025-03-01T12:00:00.000+08:00', author: { name: 'Alice' }, content: 'hello discord' }],
+    });
+    const r = parser.parseAuto(j, {});
+    assert.strictEqual(r.format, 'discord');
+    assert.strictEqual(r.messages[0].text, 'hello discord');
+    assert.strictEqual(r.messages[0].sender, 'Alice');
+  });
+  await test('Discord DCE TXT：日期行 + 续行 + 分页符', () => {
+    const t = '[01-Mar-25 12:44 PM] Alice\nhello there\n[01-Mar-25 12:45 PM] Bob\n\u001ahello!';
+    const r = parser.parseAuto(t, {});
+    assert.strictEqual(r.format, 'discord-txt');
+    assert.strictEqual(r.messages.length, 2);
+    assert.strictEqual(r.messages[0].sender, 'Alice');
+    assert.strictEqual(r.messages[0].text, 'hello there');
+  });
+  await test('Google Chat Takeout：中英日期 + 上午下午', () => {
+    const j = JSON.stringify({ messages: [
+      { creator: { name: 'Alice' }, created_date: '2025年3月1日 UTC+8 下午7:02:13', text: '晚上好' },
+      { creator: { name: 'Bob' }, created_date: 'Mar 1, 2025, 8:02:13 PM UTC+8', text: 'hey' },
+    ] });
+    const r = parser.parseAuto(j, {});
+    assert.strictEqual(r.format, 'googlechat');
+    assert.strictEqual(r.messages.length, 2);
+    assert.ok(r.messages[0].ts.includes('11:02'), 'UTC+8 下午7点 = UTC 11 点: ' + r.messages[0].ts);
+    assert.ok(r.messages[1].ts.includes('12:02'), 'UTC+8 的 20:02 → UTC 12:02: ' + r.messages[1].ts);
+  });
+  await test('iMessage 风格 CSV（is_from_me 列）', () => {
+    const j = 'Date,Service,is_from_me,Text\n2025-03-01 12:00,SMS,0,hi\n2025-03-01 12:01,SMS,1,yo';
+    const r = parser.parseAuto(j, { selfName: '' });
+    assert.ok(['csv', 'discord-csv'].includes(r.format));
+    assert.strictEqual(r.messages.length, 2);
+    assert.strictEqual(r.messages[1].isSelf, true, 'is_from_me=1 应标记本人');
+  });
+
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`\n结果：${passed} 通过，${failed} 失败`);
   if (failed) { for (const f of failures) console.log('FAIL', f.name, f.err.stack); process.exit(1); }
