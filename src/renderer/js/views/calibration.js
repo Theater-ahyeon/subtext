@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 视图：对照复盘（统计 + 预判对照 + 直接录入 + 差异分析历史/撤销） */
+/* 演练 · 视图：对照复盘（统计 + 预判对照 + 直接录入 + 差异分析历史/撤销） */
 (() => {
   const HB = window.HB;
   const { $, esc, toast, guard } = HB.ui;
@@ -33,8 +33,8 @@
       <div class="panel" data-glow><div class="empty">
         <div class="empty-icon">⟳</div>
         <div class="empty-title">闭环还没有开始</div>
-        <p>在「彩排」中聊一个真实场景 → 结束前「写下预判」→ 回到这里录入她在现实中的真实反应。闭环完成率与命中率会从这里开始积累。</p>
-        <button class="btn primary" id="goRehearsal">去彩排</button>
+        <p>在「演练」中聊一个真实场景 → 结束前「写下预判」→ 回到这里录入她在现实中的真实反应。闭环完成率与命中率会从这里开始积累。</p>
+        <button class="btn primary" id="goRehearsal">去演练</button>
       </div></div>` : ''}
       <div class="panel hairline-top" data-glow>
         <div class="panel-title">预判</div>
@@ -55,7 +55,7 @@
                   <textarea data-fbtext="${p.id}" placeholder="把她的实际回复原文粘贴到这里；沉默/未回复也写下来"></textarea></label>
                 <button class="btn primary sm" data-fb="${p.id}">提交现实反应并差异分析</button>
               </div>` : ''}
-          </div>`).join('') : '<div class="muted small">还没有预判 —— 在彩排中点「写下预判」生成。</div>'}
+          </div>`).join('') : '<div class="muted small">还没有预判 —— 在演练中点「写下预判」生成。</div>'}
       </div>
       <div class="panel" data-glow>
         <div class="panel-title">直接录入现实反应 <span class="muted small" style="font-weight:400">（没有预判也可以对照：AI 会对照理解卡差异分析）</span></div>

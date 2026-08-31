@@ -21,7 +21,7 @@ if (!gotLock) {
   });
 }
 
-// 数据目录钉住：产品改名（彩排）后 userData 默认路径会跟随新名字变化，
+// 数据目录钉住：产品改名（演练）后 userData 默认路径会跟随新名字变化，
 // 这里显式钉在旧目录 %APPDATA%/habitat-sandbox，保证老用户档案无感延续。
 app.setPath('userData', path.join(app.getPath('appData'), 'habitat-sandbox'));
 

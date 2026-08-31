@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 视图：原话库（文字 + 截图存证，剪贴板粘贴，缩略图懒加载） */
+/* 演练 · 视图：原话库（文字 + 截图存证，剪贴板粘贴，缩略图懒加载） */
 (() => {
   const HB = window.HB;
   const { $, esc, toast, guard, modal, closeModal, attachImagePickers } = HB.ui;

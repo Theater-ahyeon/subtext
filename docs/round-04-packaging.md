@@ -32,7 +32,7 @@
 
 ## 其他配置
 
-- NSIS 中文快捷方式/卸载显示名（彩排）
+- NSIS 中文快捷方式/卸载显示名（演练）
 - `files` 排除 docs/tests，asar 打包
 - CI 中 `CSC_IDENTITY_AUTO_DISCOVERY: false` 跳过 macOS 签名探测
 - CI 使用 npmmirror Electron 镜像加速

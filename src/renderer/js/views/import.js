@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 视图：导入（粘贴解析预览 / 文件导入） */
+/* 演练 · 视图：导入（粘贴解析预览 / 文件导入） */
 (() => {
   const HB = window.HB;
   const { $, esc, toast, guard } = HB.ui;

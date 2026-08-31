@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · API 层：宿主桥（Electron preload / Web 垫片）与高频辅助 */
+/* 演练 · API 层：宿主桥（Electron preload / Web 垫片）与高频辅助 */
 (() => {
   const HB = (window.HB = window.HB || {});
   HB.H = window.habitat;

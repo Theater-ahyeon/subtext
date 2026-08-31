@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 人物状态栏（HUD）：游戏风格快捷总览，数据全部来自本机档案 */
+/* 演练 · 人物状态栏（HUD）：游戏风格快捷总览，数据全部来自本机档案 */
 (() => {
   const HB = window.HB;
   const { esc, modal, guard, toast, closeModal } = HB.ui;
@@ -7,7 +7,7 @@
 
   const pct = (v) => (v == null ? '—' : Math.round(v * 100) + '%');
 
-  /** 成长阶段：按素材/条目/彩排/差异分析的粗略热度分 */
+  /** 成长阶段：按素材/条目/演练/差异分析的粗略热度分 */
   function tierOf(score) {
     if (score >= 90) return { name: '同频', lv: 5 };
     if (score >= 50) return { name: '默契', lv: 4 };
@@ -144,7 +144,7 @@
       <div class="hud-chips">
         <span class="badge plain">素材 E# ×${stats.evidence || 0}</span>
         <span class="badge plain">认知条目 ${claims.length}</span>
-        <span class="badge plain">彩排 ${sessions.length} 场${activeSessions ? `（${activeSessions} 场进行中）` : ''}</span>
+        <span class="badge plain">演练 ${sessions.length} 场${activeSessions ? `（${activeSessions} 场进行中）` : ''}</span>
         <span class="badge plain">待对照预测 ${stats.openPredictions || 0}</span>
         <span class="badge plain">想多了解 ${radar.length} 条</span>
       </div>
@@ -166,7 +166,7 @@
       </div>` : ''}
       ${latest ? `
       <div class="hud-row">
-        <span class="hud-k">最近彩排</span>
+        <span class="hud-k">最近演练</span>
         <div class="grow"><div class="hud-line">${esc(latest.scenario || '未命名场景')} <span class="hud-t">${esc(latest.createdAt.slice(0, 16)).replace('T', ' ')} · ${latest.turns} 轮${latest.status === 'active' ? ' · 进行中' : ''}</span></div></div>
       </div>` : ''}
 

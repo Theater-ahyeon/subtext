@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 视图：彩排（场景选择 + TA 的模拟对话 + 预测冻结 + 复盘报告） */
+/* 演练 · 视图：演练（场景选择 + TA 的模拟对话 + 预测冻结 + 复盘报告） */
 (() => {
   const HB = window.HB;
   const { $, esc, toast, guard, modal, closeModal, md } = HB.ui;
@@ -13,8 +13,8 @@
     if (state.session) return renderChat(el, sessions);
     el.innerHTML = `
       <div class="page-head">
-        <div class="page-title">彩排沙盒</div>
-        <div class="page-desc">在TA 的模拟身上<b>彩排重要对话</b>。她由理解卡生成——卡片越准，她越像。彩排结束后可写下预判，等你拿到她的真实反应，回「对照复盘」对照学习。</div>
+        <div class="page-title">演练沙盒</div>
+        <div class="page-desc">在TA 的模拟身上<b>演练重要对话</b>。她由理解卡生成——卡片越准，她越像。演练结束后可写下预判，等你拿到她的真实反应，回「对照复盘」对照学习。</div>
       </div>
       <div class="panel hairline-top" data-glow>
         <div class="panel-title">选择场景</div>
@@ -23,20 +23,20 @@
         </div>
         <label class="field"><span>情境设定（她也能感知到的客观情境）</span>
           <textarea id="scnText" placeholder="最近发生了什么、你们的关系阶段、这次对话的场合…"></textarea></label>
-        <label class="field"><span>彩排目标（只有复盘教练看得到，她不知道）</span>
+        <label class="field"><span>演练目标（只有复盘教练看得到，她不知道）</span>
           <textarea id="scnGoal" style="min-height:56px" placeholder="你这次想达成什么？例如：弄清她最近的疏远是不是因为我的话；练习接住拒绝"></textarea></label>
-        <div class="note">红线提醒：本工具不提供操控、打压类策略；彩排的目的是更诚实地表达与更好地理解。</div>
-        <div class="mt14"><button class="btn primary btn-beam" id="scnStart">开始彩排</button></div>
+        <div class="note">红线提醒：本工具不提供操控、打压类策略；演练的目的是更诚实地表达与更好地理解。</div>
+        <div class="mt14"><button class="btn primary btn-beam" id="scnStart">开始演练</button></div>
       </div>
       <div class="panel" data-glow>
-        <div class="panel-title">历史彩排</div>
+        <div class="panel-title">历史演练</div>
         ${sessions.length ? sessions.slice().reverse().map(s => `
           <div class="list-row">
             <span class="badge ${s.status === 'active' ? 'inference' : 'fact'}">${s.status === 'active' ? '进行中' : '已结束'}</span>
             <div class="grow"><div class="list-title">${esc(s.scenario || '未命名场景')}</div>
             <div class="list-sub">${esc(s.createdAt.slice(0, 16)).replace('T', ' ')} · ${s.turns} 轮</div></div>
             <button class="btn sm ghost" data-view="${s.id}">查看</button>
-          </div>`).join('') : '<div class="muted small">还没有彩排记录。</div>'}
+          </div>`).join('') : '<div class="muted small">还没有演练记录。</div>'}
       </div>
     `;
     let scnIdx = 0;
@@ -57,7 +57,7 @@
         state.sessionScenario = scenario;
         state.sessionGoal = goal;
         const nRecall = (r.recalled || []).length;
-        toast('彩排开始' + (nRecall ? `（她想起了 ${nRecall} 段相关往事）` : ''), 'ok');
+        toast('演练开始' + (nRecall ? `（她想起了 ${nRecall} 段相关往事）` : ''), 'ok');
         renderChat(el, sessions);
       }
     };
@@ -76,7 +76,7 @@
   function renderChat(el, sessions, report) {
     el.innerHTML = `
       <div class="page-head">
-        <div class="page-title">彩排中 <span class="muted small" style="font-weight:400">${state.session.readonly ? '· 只读回放' : ''}</span></div>
+        <div class="page-title">演练中 <span class="muted small" style="font-weight:400">${state.session.readonly ? '· 只读回放' : ''}</span></div>
         <div class="page-desc">${esc((state.sessionScenario || '未命名场景').slice(0, 120))}</div>
       </div>
       <div class="panel hairline-top">
@@ -96,7 +96,7 @@
           <div class="flex mt14">
             <button class="btn sm" id="freezeBtn">写下预判</button>
             <button class="btn sm" id="endBtn">结束并生成复盘</button>
-            <span class="muted small">结束彩排前可写下预判 = 对"她现实中会如何回应"的多假设快照；之后到「对照复盘」录入她的真实反应。</span>
+            <span class="muted small">结束演练前可写下预判 = 对"她现实中会如何回应"的多假设快照；之后到「对照复盘」录入她的真实反应。</span>
           </div>`}
         </div>
       </div>
@@ -176,7 +176,7 @@
       if (r) {
         state.session.readonly = true;
         renderChat(el, sessions, r.report);
-        toast('彩排已结束' + (r.memoryNote ? '，' + r.memoryNote : ''), 'ok');
+        toast('演练已结束' + (r.memoryNote ? '，' + r.memoryNote : ''), 'ok');
       }
     });
     $('#regenReportBtn') && ($('#regenReportBtn').onclick = async () => {

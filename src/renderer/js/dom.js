@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · DOM 工具：选择器、转义、受限 markdown、toast、loading、模态、图片拾取、指针辉光 */
+/* 演练 · DOM 工具：选择器、转义、受限 markdown、toast、loading、模态、图片拾取、指针辉光 */
 (() => {
   const HB = (window.HB = window.HB || {});
 

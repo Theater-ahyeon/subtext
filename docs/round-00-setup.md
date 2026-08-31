@@ -4,13 +4,13 @@
 
 ## 目标
 
-为「社交彩排沙盒」建立工程基础：技术选型、仓库骨架、依赖安装、方法论映射确认。
+为「社交演练沙盒」建立工程基础：技术选型、仓库骨架、依赖安装、方法论映射确认。
 
 ## 决策记录
 
 | 决策 | 选择 | 理由 |
 |---|---|---|
-| 产品名 | 彩排 Rehearsal（repo: `habitat-sandbox`） | 直接对应 AIRP 人物理解写法 |
+| 产品名 | 演练 Rehearsal（repo: `habitat-sandbox`） | 直接对应 AIRP 人物理解写法 |
 | 桌面框架 | Electron 33 + 原生 HTML/CSS/JS（无构建步骤） | 跨平台安装包成熟（nsis/dmg/AppImage/deb）；无打包器降低自主开发风险；CSP + contextIsolation 保安全 |
 | 存储 | 本地 JSON 文件 + 原子写入（tmp + rename） | 本地优先红线；零原生依赖；存储层接口化，可后续换 SQLite |
 | LLM 接入 | OpenAI 兼容接口（baseUrl/key/model 可配）+ **演示模式**（离线 mock，全流程可体验可测试） | 用户可接任意网关；CI/无 Key 环境可跑通 |

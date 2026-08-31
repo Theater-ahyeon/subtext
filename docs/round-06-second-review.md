@@ -21,7 +21,7 @@
 | 3 | **extractJson 多围栏取错优先级**：模型先回显格式示例再给真实结果时，差异分析/预测静默采纳示例占位数据写入卡片与统计 | 候选从后向前尝试（真实结果惯例在后）；新增多围栏回归测试 |
 | 4 | kv 兜底把裸时间行当消息（旧守卫只测冒号前部分，形同虚设） | 改测整行 |
 | 5 | normalizeBaseUrl：带 query + 尾斜杠 → `/v1//v1/chat/completions`；Gemini `/v1beta/openai` 被拼错 404 | query 拆出后再去尾斜杠；`/openai` 结尾特判 |
-| 6 | **IPC 并发读-改-写丢更新**（实测复现）：彩排输入框在遮罩下仍可键入，归纳期间编辑 → 最后写者胜，先完成的结果静默丢失 | 主进程按 personId 建互斥 promise 队列，所有人物 IPC 串行化 |
+| 6 | **IPC 并发读-改-写丢更新**（实测复现）：演练输入框在遮罩下仍可键入，归纳期间编辑 → 最后写者胜，先完成的结果静默丢失 | 主进程按 personId 建互斥 promise 队列，所有人物 IPC 串行化 |
 | 7 | 撤销差异分析后重交反馈 → `loopCompletion` 200%，且撤销不清 feedback 关联 | undo 时 feedback.predictionId 置 null 退出闭环分子；loopCompletion 封顶；统计导出 `linkedFeedbacks`，UI 标签用真值 |
 | 8 | compileCard"总量 ≤28"是死代码（每层 8×4=32 才封顶） | `slice(0, min(8, 28-total))` 真正生效 |
 | 9 | 复盘生成失败 → 会话已 ended、报告永失、无重试入口 | 报告成功后才落 ended；只读回放对"已结束无报告"提供"重新生成复盘" |

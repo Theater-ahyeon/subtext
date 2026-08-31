@@ -1,4 +1,4 @@
-/* 彩排 · 基础层：重置、排版、滚动条、焦点（暖纸亮色版） */
+/* 知微 · 基础层：重置、排版、滚动条、焦点（暖纸亮色版） */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 /* hidden 属性必须始终生效：modal-backdrop/loading-overlay 等的 display 规则会盖过 UA 的 display:none */
 [hidden] { display: none !important; }

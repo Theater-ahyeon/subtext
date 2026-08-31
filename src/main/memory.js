@@ -1,11 +1,11 @@
 'use strict';
 /**
  * 事件记忆（episodic memory）：
- *  - 粒度 = 事件段：一次彩排由 LLM 提取 2~5 条事件句；一次现实对照记录 1 条真实反应原话
+ *  - 粒度 = 事件段：一次演练由 LLM 提取 2~5 条事件句；一次现实对照记录 1 条真实反应原话
  *  - 向量：优先服务商 embedding（openai 兼容 / gemini / ollama）；不可用或失败时
  *    降级为本地词面 hash 向量（离线可用，结果标记 fallback，UI 如实提示）
  *  - 检索：单人物规模（数百~数千条）暴力余弦足够，不引入向量库依赖
- *  - 溯源红线：每条记忆必须挂 ref（彩排场次 / 证据编号 / 预判 id），可查看、可删除、可重建
+ *  - 溯源红线：每条记忆必须挂 ref（演练场次 / 证据编号 / 预判 id），可查看、可删除、可重建
  */
 const { uid, now } = require('./store');
 
@@ -175,7 +175,7 @@ async function writeEvents(bundle, settings, { kind, events, ref }) {
   return { added: clean.length, fallback, error };
 }
 
-/** 彩排结束：LLM 提取事件句并写入（ledger 防重复记忆同一场） */
+/** 演练结束：LLM 提取事件句并写入（ledger 防重复记忆同一场） */
 async function rememberSession(store, bundle, settings, session, { chat, extractJson, P }) {
   const mem = ensureMemories(bundle);
   if (mem.ledger[session.id]) return { added: 0, skipped: true };
@@ -206,11 +206,11 @@ async function rememberSession(store, bundle, settings, session, { chat, extract
 
 /** 无网络/失败时的兜底提取：取首条用户消息与末条模拟回应作极简事件（明确弱于 LLM 版本） */
 function naiveEvents(session) {
-  const users = session.messages.filter(m => m.role === 'user' && !/^\（彩排开始）$/.test(m.content));
+  const users = session.messages.filter(m => m.role === 'user' && !/^\（演练开始）$/.test(m.content));
   const twins = session.messages.filter(m => m.role === 'twin');
   const out = [];
-  if (users[0]) out.push({ text: '彩排「' + String(session.scenario || '未命名').slice(0, 30) + '」：用户说了「' + users[0].content.slice(0, 60) + '」' });
-  if (twins[twins.length - 1]) out.push({ text: '彩排末尾她的回应：「' + twins[twins.length - 1].content.slice(0, 60) + '」' });
+  if (users[0]) out.push({ text: '演练「' + String(session.scenario || '未命名').slice(0, 30) + '」：用户说了「' + users[0].content.slice(0, 60) + '」' });
+  if (twins[twins.length - 1]) out.push({ text: '演练末尾她的回应：「' + twins[twins.length - 1].content.slice(0, 60) + '」' });
   return out.slice(0, 2);
 }
 

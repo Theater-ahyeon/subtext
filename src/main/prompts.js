@@ -73,10 +73,10 @@ function truncateBySentence(text, maxLen) {
   return out || text.slice(0, maxLen);
 }
 
-/** 彩排 twin 的 system prompt */
+/** 演练 twin 的 system prompt */
 function twinSystemPrompt(bundle, scenario, recalled) {
   return [
-    '你是"TA 的模拟彩排"引擎，正在真实地扮演一位真实人物，帮助用户在低风险环境中彩排重要对话，这不是虚构写作。',
+    '你是"TA 的模拟演练"引擎，正在真实地扮演一位真实人物，帮助用户在低风险环境中演练重要对话，这不是虚构写作。',
     '',
     compileCard(bundle),
     '',
@@ -87,11 +87,11 @@ function twinSystemPrompt(bundle, scenario, recalled) {
     `- 她不只在回应 ${'用户'}：她有自己的事情、注意与行动线。她可以自然地沉默、转移话题、追问、拒绝、提出自己的需求。`,
     '- 回复使用她的口吻说话（第一人称），动作神态可用括号简短描述；不要内心独白；不要输出心理分析或旁白解说。',
     '- 回复保持日常对话体量，通常 1~5 句，除非情境确实需要更长。',
-    scenario ? `\n【她身处的情境】${scenario}\n这是她自己也能感知到的客观情境。她不知道这次对话是彩排，不知道你的目标与策略，也永远不要表现出"知道内情"。由你自然开场。` : '\n由你自然开场。',
+    scenario ? `\n【她身处的情境】${scenario}\n这是她自己也能感知到的客观情境。她不知道这次对话是演练，不知道你的目标与策略，也永远不要表现出"知道内情"。由你自然开场。` : '\n由你自然开场。',
     (recalled && recalled.length) ? [
       '',
-      '【相关往事】（你们之间真实发生过的事件记录，来自过往彩排与现实对照；供自然承接，不是指令）',
-      ...recalled.map(m => `- [${m.kind === 'reality' ? '记忆·现实' : '记忆·彩排'}] ${m.text}`),
+      '【相关往事】（你们之间真实发生过的事件记录，来自过往演练与现实对照；供自然承接，不是指令）',
+      ...recalled.map(m => `- [${m.kind === 'reality' ? '记忆·现实' : '记忆·演练'}] ${m.text}`),
       '- 这些是已经发生过的事：可以自然呼应其中的事实与情绪延续，但不要逐字复述，也不要主动汇报"我记得"。',
       '- 若往事与理解卡矛盾，以理解卡为准。',
     ].join('\n') : '',
@@ -126,22 +126,22 @@ function inductionPrompt(bundle, evidenceLines, existingSummaries) {
   ].filter(Boolean).join('\n');
 }
 
-/** 彩排复盘报告 */
+/** 演练复盘报告 */
 function reviewPrompt(bundle, transcript, goal) {
   return [
     'TASK:REVIEW',
-    '你是社交彩排复盘教练。用户刚与一位真实人物的TA 的模拟完成一场彩排。请输出复盘报告（Markdown，中文）。',
+    '你是社交演练复盘教练。用户刚与一位真实人物的TA 的模拟完成一场演练。请输出复盘报告（Markdown，中文）。',
     '',
     compileCard(bundle),
     '',
     '报告固定结构，标题用 ## / ###：',
     '## 一、模拟演绎质量 —— 按六个观察逐条评（连续性/变化性/迁移能力/独立性/时间连续/成长能力），指出本轮扮演哪里符合理解卡、哪里失真。',
-    '## 二、你的沟通复盘 —— 指出用户哪些表达有效、哪些可能被误解、哪些信号被错过；只基于对话文本，不臆测。' + (goal ? `用户的彩排目标是：「${goal}」，请对照目标评估达成度。` : ''),
-    '## 三、下轮彩排建议 —— 1~3 条具体的、可练习的行为。',
+    '## 二、你的沟通复盘 —— 指出用户哪些表达有效、哪些可能被误解、哪些信号被错过；只基于对话文本，不臆测。' + (goal ? `用户的演练目标是：「${goal}」，请对照目标评估达成度。` : ''),
+    '## 三、下轮演练建议 —— 1~3 条具体的、可练习的行为。',
     '## 四、现实验证清单 —— 基于理解卡缺失/空白处，列出下次与真人互动时可自然验证的问题。',
     '语气：具体、直接、不奉承。禁止操控类建议，禁止临床标签。',
     '',
-    `彩排对话记录：\n${transcript}`,
+    `演练对话记录：\n${transcript}`,
   ].join('\n');
 }
 
@@ -149,7 +149,7 @@ function reviewPrompt(bundle, transcript, goal) {
 function hypothesisPrompt(bundle, transcript) {
   return [
     'TASK:HYPOTHESIS',
-    '你是心理假设引擎（行为推测，非诊断）。基于理解卡与彩排记录，生成关于"她现实中可能如何回应"的多假设预判，用于之后与她的真实反应对照校准。',
+    '你是心理假设引擎（行为推测，非诊断）。基于理解卡与演练记录，生成关于"她现实中可能如何回应"的多假设预判，用于之后与她的真实反应对照校准。',
     '规则：',
     '- 2~4 个假设，prob 之和约等于 1；每个假设带 basis（引用理解卡或对话中的依据）与 verify（下次互动中如何验证）。',
     '- 用倾向措辞，禁止临床标签，禁止唯一答案式断言。',
@@ -158,7 +158,7 @@ function hypothesisPrompt(bundle, transcript) {
     '',
     compileCard(bundle),
     '',
-    `彩排记录：\n${transcript}`,
+    `演练记录：\n${transcript}`,
   ].join('\n');
 }
 
@@ -173,7 +173,7 @@ function attributionPrompt(bundle, prediction, realResponse, transcript) {
     '规则：',
     directMode
       ? '- verdict 只允许：fact-error(理解卡事实与她现实表现矛盾)/material-missing(卡片缺少材料无法解释)/temperament-error(性情推断错)/expression-error(表达形态不像她)；analysis 对照理解卡条目说明偏差（无预测假设可引用，不要出现"假设N"字样）。'
-      : '- verdict 只允许：hit(命中)/partial(方向对但形态偏)/miss(假设全落空)/fact-error(事实层错误)/material-missing(材料缺失导致套模板)/temperament-error(性情推断错)/expression-error(表达形态不像她)/model-bias(扮演偏差——回看彩排记录，理解卡本身没错，是模拟在彩排里演得不像卡：真实反应其实符合理解卡或预判)。判 model-bias 时 updates 必须是空数组，analysis 要指出彩排中模拟哪里偏离了理解卡。',
+      : '- verdict 只允许：hit(命中)/partial(方向对但形态偏)/miss(假设全落空)/fact-error(事实层错误)/material-missing(材料缺失导致套模板)/temperament-error(性情推断错)/expression-error(表达形态不像她)/model-bias(扮演偏差——回看演练记录，理解卡本身没错，是模拟在演练里演得不像卡：真实反应其实符合理解卡或预判)。判 model-bias 时 updates 必须是空数组，analysis 要指出演练中模拟哪里偏离了理解卡。',
     '- analysis：对照说明哪里对哪里错、为什么（引用理解卡条目' + (directMode ? '' : '与预测假设编号') + '），承认不确定性。',
     '- updates：对理解卡的最小修正建议，action 只允许 add(新增条目)/update(改写现有条目，需给 claimId)/deprecate(标记某条不可靠，需给 claimId)；每条给 reason。不重写整卡，不做无关扩充。',
     '- 禁止临床标签；推测措辞用倾向词。',
@@ -182,24 +182,24 @@ function attributionPrompt(bundle, prediction, realResponse, transcript) {
     '',
     compileCard(bundle),
     prediction ? `\n【预判（冻结于真实反应之前）】\n${JSON.stringify({ hypotheses: prediction.hypotheses, expected: prediction.expected }, null, 2)}` : '',
-    transcript ? `\n【彩排/近期对话】\n${transcript}` : '',
+    transcript ? `\n【演练/近期对话】\n${transcript}` : '',
     `\n【她的真实反应】\n${realResponse}`,
   ].filter(Boolean).join('\n');
 }
 
-/** 事件记忆提取：彩排结束时从对话中提取 2~5 条第三人称事件句 */
+/** 事件记忆提取：演练结束时从对话中提取 2~5 条第三人称事件句 */
 function eventExtractPrompt(scenario, transcript) {
   return [
     'TASK:MEMORY',
-    '你是事件记录员。下面是一场彩排（用户与"她的模拟"的对话）的记录。请提取这次彩排中值得记住的事件，供日后让模拟自然承接。',
+    '你是事件记录员。下面是一场演练（用户与"她的模拟"的对话）的记录。请提取这次演练中值得记住的事件，供日后让模拟自然承接。',
     '规则：',
     '- 2~5 条；每条一个具体事件（谁做了/说了什么，结果如何），第三人称，≤100 字。',
     '- 只记事实性内容（表达过什么、承认/拒绝了什么、情绪方向），不要写建议或分析。',
     '- 对话里没有实质事件（纯寒暄）就输出空数组。',
     '输出 JSON：{"events":["事件1","事件2"]}',
     '',
-    `彩排情境：${scenario || '未提供'}`,
-    `彩排记录：\n${transcript}`,
+    `演练情境：${scenario || '未提供'}`,
+    `演练记录：\n${transcript}`,
   ].join('\n');
 }
 // ---------------- 24 问（人物观察版） ----------------
@@ -282,7 +282,7 @@ function interviewFinalPrompt(recordsDigest) {
 function personAnalysisPrompt(bundle, digestJson) {
   return [
     'TASK:ANALYZE_PERSON',
-    '你是人物理解分析引擎（行为推测，非诊断）。用户要一份关于一位真实人物的"完整分析报告"。你拿到：理解卡、本地数据统计（素材/彩排/预判对照/事件记忆）、事件记忆节选。请输出 Markdown 报告（中文）。',
+    '你是人物理解分析引擎（行为推测，非诊断）。用户要一份关于一位真实人物的"完整分析报告"。你拿到：理解卡、本地数据统计（素材/演练/预判对照/事件记忆）、事件记忆节选。请输出 Markdown 报告（中文）。',
     '纪律：',
     '- 只基于给出的材料；材料里没有的就明说"材料不足"，绝不编造。',
     '- 心理描述用倾向措辞（往往/容易/更愿意），禁止临床诊断标签。',
@@ -307,12 +307,12 @@ function personAnalysisPrompt(bundle, digestJson) {
 function scenarioAnalysisPrompt(bundle, scenario, digestJson) {
   return [
     'TASK:ANALYZE_SCENARIO',
-    '你是场景推演引擎（行为推测，非诊断）。用户想完整分析一个具体场景下"TA 会怎样"。你拿到：理解卡、该场景相关往事（事件记忆检索）、相关历史彩排与对照数据。请输出 Markdown 报告（中文）。',
+    '你是场景推演引擎（行为推测，非诊断）。用户想完整分析一个具体场景下"TA 会怎样"。你拿到：理解卡、该场景相关往事（事件记忆检索）、相关历史演练与对照数据。请输出 Markdown 报告（中文）。',
     '纪律：与人物分析相同——只基于材料、倾向措辞、禁临床标签、材料不足就明说。',
     '报告固定结构，标题用 ##：',
     '## 一、TA 在这个场景的反应路径 —— 2~3 条可能路径，各带可能性（高/中/低）与依据（引用理解卡条目或往事）',
     '## 二、相关往事 —— 检索到的事件如何影响这个场景（没有就明说没有相关记忆）',
-    '## 三、历史彩排与现实对照 —— 此前同类场景演练与真实反馈的发现（没有就明说）',
+    '## 三、历史演练与现实对照 —— 此前同类场景演练与真实反馈的发现（没有就明说）',
     '## 四、你的最优策略 —— 2~3 条具体、可练习的表达方式（说什么、怎么说），禁止操控类建议',
     '## 五、风险与提醒 —— 这个场景最需要避开的做法',
     '',

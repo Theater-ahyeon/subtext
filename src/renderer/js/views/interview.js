@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 视图：24 问（逐题作答 + 追问 + 中途总结 + 最终整合写卡） */
+/* 演练 · 视图：24 问（逐题作答 + 追问 + 中途总结 + 最终整合写卡） */
 (() => {
   const HB = window.HB;
   const { $, esc, toast, guard, modal, closeModal, md } = HB.ui;

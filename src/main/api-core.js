@@ -31,7 +31,7 @@ function createCore({ dataDir, version, platform, secure }) {
     return String(id);
   }
 
-  // 人物级互斥：所有读-改-写按 personId 串行，防并发覆盖（彩排双发/归纳期间编辑）
+  // 人物级互斥：所有读-改-写按 personId 串行，防并发覆盖（演练双发/归纳期间编辑）
   const personLocks = new Map();
   function withPerson(id, fn) {
     const pid = validId(id);

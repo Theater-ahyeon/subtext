@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 视图：人物（档案网格 + 新建/导入/删除） */
+/* 演练 · 视图：人物（档案网格 + 新建/导入/删除） */
 (() => {
   const HB = window.HB;
   const { $, esc, toast, guard, modal, closeModal } = HB.ui;
@@ -13,7 +13,7 @@
     el.innerHTML = `
       <div class="page-head">
         <div class="page-title">关系</div>
-        <div class="page-desc">为每一位你想理解、想彩排的真实对象建立一份<b>本地关系档案</b>。档案只保存在你自己的电脑上；配置在线模型后，相关文本会发送给你配置的模型服务商。</div>
+        <div class="page-desc">为每一位你想理解、想演练的真实对象建立一份<b>本地关系档案</b>。档案只保存在你自己的电脑上；配置在线模型后，相关文本会发送给你配置的模型服务商。</div>
         <div class="mt8"><button class="btn sm ghost" id="importCardBtn">导入卡片文件</button></div>
       </div>
       ${state.persons.length ? `
@@ -68,7 +68,7 @@
         e.stopPropagation();
         const p = state.persons.find(x => x.id === btn.dataset.del);
         modal(`<h3>删除「${esc(p.name)}」？</h3>
-          <p class="muted small">将删除其理解卡、证据、彩排与访谈的全部本地数据，不可恢复。</p>
+          <p class="muted small">将删除其理解卡、证据、演练与访谈的全部本地数据，不可恢复。</p>
           <div class="modal-ops"><button class="btn ghost" id="mCancel">取消</button><button class="btn danger" id="mOk">确认删除</button></div>`);
         $('#mCancel').onclick = closeModal;
         $('#mOk').onclick = async () => { await H.persons.del({ id: p.id }); closeModal(); toast('已删除', 'ok'); viewHome(el); };

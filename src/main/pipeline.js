@@ -1,6 +1,6 @@
 'use strict';
 /**
- * 业务流水线：归纳 → 理解卡 → 彩排 → 预测冻结 → 现实对照 → 差异分析 → 卡片更新。
+ * 业务流水线：归纳 → 理解卡 → 演练 → 预测冻结 → 现实对照 → 差异分析 → 卡片更新。
  * 所有 LLM 调用集中在此，main.js 只做 IPC 编排。
  */
 const { chat, extractJson, looksLikeVisionUnsupported } = require('./llm');
@@ -128,10 +128,10 @@ function clamp01(v) {
 
 const clampText = (v, n) => String(v == null ? '' : v).slice(0, n);
 
-// ---------- 彩排 ----------
+// ---------- 演练 ----------
 async function startSession(store, bundle, settings, scenario, goal) {
-  if (P.redlineCheck(scenario || '')) throw new Error('场景包含操控/打压/伤害类内容，本工具不提供此类彩排。请改写为中性情境描述，例如"你们因小事冷战三天，你想修复关系"。');
-  if (P.redlineCheck(goal || '')) throw new Error('彩排目标包含操控/打压/伤害类内容，本工具不提供此类彩排。目标请写成你想练习的表达方式，例如"练习接住拒绝"。');
+  if (P.redlineCheck(scenario || '')) throw new Error('场景包含操控/打压/伤害类内容，本工具不提供此类演练。请改写为中性情境描述，例如"你们因小事冷战三天，你想修复关系"。');
+  if (P.redlineCheck(goal || '')) throw new Error('演练目标包含操控/打压/伤害类内容，本工具不提供此类演练。目标请写成你想练习的表达方式，例如"练习接住拒绝"。');
   const session = { id: require('./store').uid(), scenario: clampText(scenario, 2000), goal: clampText(goal, 2000), status: 'active', createdAt: new Date().toISOString(), endedAt: null, messages: [] };
   bundle.sessions.push(session);
   // 事件记忆：用场景设定检索相关往事注入，让模拟自然承接（失败不影响开场）
@@ -140,9 +140,9 @@ async function startSession(store, bundle, settings, scenario, goal) {
   const sys = P.twinSystemPrompt(bundle, session.scenario, recalled);
   const reply = await chat(settings, [
     { role: 'system', content: sys },
-    { role: 'user', content: '（彩排开始，请以她的身份自然开场）' },
+    { role: 'user', content: '（演练开始，请以她的身份自然开场）' },
   ], { task: 'TWIN' });
-  session.messages.push({ role: 'user', content: '（彩排开始）', ts: new Date().toISOString() });
+  session.messages.push({ role: 'user', content: '（演练开始）', ts: new Date().toISOString() });
   session.messages.push({ role: 'twin', content: reply, ts: new Date().toISOString() });
   store.savePerson(bundle);
   return { session, reply, recalled };
@@ -150,11 +150,11 @@ async function startSession(store, bundle, settings, scenario, goal) {
 
 async function twinTurn(store, bundle, settings, sessionId, userText) {
   const session = bundle.sessions.find(s => s.id === sessionId);
-  if (!session) throw new Error('彩排会话不存在');
-  if (session.status !== 'active') throw new Error('该彩排已结束');
+  if (!session) throw new Error('演练会话不存在');
+  if (session.status !== 'active') throw new Error('该演练已结束');
   if (P.redlineCheck(userText)) {
     const err = new Error('REDLINE');
-    err.blocked = '[系统提示] 这个请求涉及操控、打压或伤害性策略，本工具不提供。彩排的目的是帮你更好地理解与表达自己——比如如何诚实地说出你的需求，或如何接住对方的拒绝。';
+    err.blocked = '[系统提示] 这个请求涉及操控、打压或伤害性策略，本工具不提供。演练的目的是帮你更好地理解与表达自己——比如如何诚实地说出你的需求，或如何接住对方的拒绝。';
     throw err;
   }
   session.messages.push({ role: 'user', content: clampText(userText, 4000), ts: new Date().toISOString() });
@@ -177,9 +177,9 @@ function sessionTranscript(session, max = 60) {
 
 async function endSession(store, bundle, settings, sessionId) {
   const session = bundle.sessions.find(s => s.id === sessionId);
-  if (!session) throw new Error('彩排会话不存在');
+  if (!session) throw new Error('演练会话不存在');
   if (session.status === 'ended' && (bundle.sessionReports || []).some(r => r.sessionId === sessionId)) {
-    throw new Error('该彩排已结束且已有复盘报告');
+    throw new Error('该演练已结束且已有复盘报告');
   }
   const report = await chat(settings, [
     { role: 'user', content: P.reviewPrompt(bundle, sessionTranscript(session), session.goal) },
@@ -193,7 +193,7 @@ async function endSession(store, bundle, settings, sessionId) {
   let memoryNote = '';
   try {
     const mr = await memory.rememberSession(store, bundle, settings, session, { chat, extractJson, P });
-    if (mr && mr.added) memoryNote = '已记住 ' + mr.added + ' 段本次彩排事件';
+    if (mr && mr.added) memoryNote = '已记住 ' + mr.added + ' 段本次演练事件';
   } catch { memoryNote = ''; }
   store.savePerson(bundle);
   return { report, memoryNote };
@@ -202,7 +202,7 @@ async function endSession(store, bundle, settings, sessionId) {
 // ---------- 预测冻结 / 现实对照 / 差异分析 ----------
 async function freezePrediction(store, bundle, settings, sessionId) {
   const session = bundle.sessions.find(s => s.id === sessionId);
-  if (!session) throw new Error('彩排会话不存在');
+  if (!session) throw new Error('演练会话不存在');
   const raw = await chat(settings, [
     { role: 'user', content: P.hypothesisPrompt(bundle, sessionTranscript(session)) },
   ], { task: 'HYPOTHESIS', temperature: settings.analysisTemperature });
@@ -595,7 +595,7 @@ async function analyzePerson(store, bundle, settings) {
   return { report };
 }
 
-/** 场景推演分析：相关往事 + 同类彩排 + 反应路径 + 策略 */
+/** 场景推演分析：相关往事 + 同类演练 + 反应路径 + 策略 */
 async function analyzeScenario(store, bundle, settings, scenario) {
   const text = clampText(scenario, 2000);
   if (!text.trim()) throw new Error('请先填写要分析的场景');

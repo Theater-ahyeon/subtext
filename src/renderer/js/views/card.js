@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 视图：理解卡（四层认知条目 + 动态状态 + 想多了解的 + 条目表单） */
+/* 演练 · 视图：理解卡（四层认知条目 + 动态状态 + 想多了解的 + 条目表单） */
 (() => {
   const HB = window.HB;
   const { $, esc, toast, loading, guard, modal, closeModal } = HB.ui;
@@ -78,7 +78,7 @@
           <button class="btn sm ghost" id="memRebuild">重建向量</button>
           <button class="btn sm danger" id="memClear">清空</button>
         </div>
-        <div class="panel-sub">彩排复盘与现实对照会自动把「发生过什么」存成事件段（向量化，可检索）。开场彩排时，相关往事会自动注入给她的模拟。每段都带来源，可单删。</div>
+        <div class="panel-sub">演练复盘与现实对照会自动把「发生过什么」存成事件段（向量化，可检索）。开场演练时，相关往事会自动注入给她的模拟。每段都带来源，可单删。</div>
         <div id="memBox"><div class="muted small">加载中…</div></div>
       </div>
     `;
@@ -164,12 +164,12 @@
         : '';
       box.innerHTML = mem.items.length ? mem.items.map(m => `
         <div class="list-row">
-          <span class="badge ${m.kind === 'reality' ? 'src-evidence' : 'src-ai'}">${m.kind === 'reality' ? '现实' : '彩排'}</span>
+          <span class="badge ${m.kind === 'reality' ? 'src-evidence' : 'src-ai'}">${m.kind === 'reality' ? '现实' : '演练'}</span>
           <div class="grow"><div class="list-title">${esc(m.text)}</div>
-          <div class="list-sub">${esc((m.ts || '').slice(0, 16)).replace('T', ' ')}${m.ref && m.ref.evidenceSeq ? ` · 证据 E${m.ref.evidenceSeq}` : ''}${m.ref && m.ref.sessionId ? ' · 来自彩排' : ''}</div></div>
+          <div class="list-sub">${esc((m.ts || '').slice(0, 16)).replace('T', ' ')}${m.ref && m.ref.evidenceSeq ? ` · 证据 E${m.ref.evidenceSeq}` : ''}${m.ref && m.ref.sessionId ? ' · 来自演练' : ''}</div></div>
           <button class="btn sm ghost" data-memdel="${m.id}">删</button>
         </div>`).join('')
-        : '<div class="muted small">还没有事件记忆 —— 完成一场彩排复盘，或在对照复盘录入一次现实反应后会自动生成。</div>';
+        : '<div class="muted small">还没有事件记忆 —— 完成一场演练复盘，或在对照复盘录入一次现实反应后会自动生成。</div>';
       box.querySelectorAll('[data-memdel]').forEach(btn => {
         btn.onclick = async () => { await guard(() => H.memory.del({ id: b.id, memoryId: btn.dataset.memdel })); loadMem(); };
       });

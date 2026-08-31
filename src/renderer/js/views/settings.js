@@ -1,5 +1,5 @@
 'use strict';
-/* 彩排 · 视图：设置（模型服务接入 + 数据与隐私） */
+/* 演练 · 视图：设置（模型服务接入 + 数据与隐私） */
 (() => {
   const HB = window.HB;
   const { $, esc, toast, guard } = HB.ui;
@@ -37,7 +37,7 @@
           ${s.hasApiKey && !s.keyEncrypted ? '<div class="note red mt8">⚠ 本机系统密钥服务不可用，当前 API Key 以<b>明文</b>保存在 settings.json 中。请注意保护该文件，或更换支持系统密钥服务的环境。</div>' : ''}
         </div>
         <div class="mt20">
-          <div class="panel-title">事件记忆向量化 <span class="muted small" style="font-weight:400">（彩排复盘与现实对照会自动记住事件段，供模拟日后自然承接）</span></div>
+          <div class="panel-title">事件记忆向量化 <span class="muted small" style="font-weight:400">（演练复盘与现实对照会自动记住事件段，供模拟日后自然承接）</span></div>
           <label class="field mt8"><span>Embedding 来源</span><select id="stEmbedProvider">
             <option value="" ${!s.embedProvider ? 'selected' : ''}>跟随主模型（openai / gemini / ollama 自动；其余走本地词面检索）</option>
             <option value="openai" ${s.embedProvider === 'openai' ? 'selected' : ''}>OpenAI 兼容 /v1/embeddings</option>
