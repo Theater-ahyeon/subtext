@@ -1,4 +1,4 @@
-﻿# 生成应用图标 build/icon.png (512x512)：墨底圆角方块 + 琥珀-玉色双生水滴（生境意象）
+﻿# 生成应用图标 build/icon.png (512x512)：墨底圆角方块 + 琥珀-玉色双生水滴（水滴意象）
 Add-Type -AssemblyName System.Drawing
 
 $size = 512
