@@ -123,6 +123,12 @@
       attributions: (p) => invoke('attribution:list', p),
       undo: (p) => invoke('attribution:undo', p),
     },
+    graph: {
+      get: () => invoke('graph:get'),
+      build: () => invoke('graph:build'),
+      addEdge: (p) => invoke('graph:addEdge', p),
+      removeEdge: (p) => invoke('graph:removeEdge', p),
+    },
     profile: {
       set: (p) => invoke('profile:set', p),
       extract: (p) => invoke('profile:extract', p),

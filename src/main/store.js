@@ -269,6 +269,21 @@ class Store {
     atomicWrite(this.indexFile(), JSON.stringify(this.listPersons().filter(p => p.id !== id), null, 2));
   }
 
+  // ---------- 关系图谱（跨人物，独立 graph.json） ----------
+  graphFile() { return path.join(this.dataDir, 'graph.json'); }
+  loadGraph() {
+    try {
+      const v = JSON.parse(fs.readFileSync(this.graphFile(), 'utf8'));
+      return v && typeof v === 'object' ? v : this.defaultGraph();
+    } catch { return this.defaultGraph(); }
+  }
+  defaultGraph() { return { version: 1, updatedAt: null, stale: false, nodes: [], edges: [] }; }
+  saveGraph(graph) {
+    graph.updatedAt = now();
+    atomicWrite(this.graphFile(), JSON.stringify(graph, null, 2));
+    return graph;
+  }
+
   // ---------- person 内部通用操作 ----------
   addEvidence(bundle, { sourceType, text, ts, sender, isSelf, media, mediaMime }) {
     const seq = (bundle.evidence.reduce((m, e) => Math.max(m, e.seq || 0), 0)) + 1;

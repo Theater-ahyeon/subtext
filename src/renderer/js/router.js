@@ -45,7 +45,7 @@
 
   function go(view) {
     // 设置与人物页不依赖当前人物；其余视图需要先选择人物
-    if (!['home', 'settings'].includes(view) && !state.currentId) { toast('请先创建并选择一位对象', 'err'); return; }
+    if (!['home', 'settings', 'graph'].includes(view) && !state.currentId) { toast('请先创建并选择一位对象', 'err'); return; }
     state.view = view;
     renderNav();
     render();

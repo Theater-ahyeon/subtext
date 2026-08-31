@@ -16,6 +16,7 @@ const pipeline = require('./pipeline');
 const P = require('./prompts');
 const { chat, fetchModels } = require('./llm');
 const memory = require('./memory');
+const graphMod = require('./graph');
 
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
@@ -42,6 +43,8 @@ function createCore({ dataDir, version, platform, secure }) {
       return fn(bundle);
     });
     personLocks.set(pid, next.catch(() => {}));
+    // 关系图谱实时性：任何对象数据变更后置"待更新"标记（图谱页据此提示重建）
+    next.then(() => { try { graphMod.markStale(store); } catch {} }).catch(() => {});
     return next;
   }
 
@@ -269,6 +272,17 @@ function createCore({ dataDir, version, platform, secure }) {
       return { ...r, digest };
     }),
     'analysis:unseen': ({ id, message, context }) => withPerson(id, async b => pipeline.analyzeUnseen(store, b, effectiveSettings(), { message, context })),
+
+    // ---------- 关系图谱 ----------
+    'graph:get': () => ({ graph: store.loadGraph(), persons: store.listPersons() }),
+    'graph:build': async () => {
+      const persons = store.listPersons();
+      const bundles = persons.map(p => store.loadPerson(p.id)).filter(Boolean);
+      const graph = await graphMod.buildGraph(store, bundles, effectiveSettings());
+      return { graph, built: graph.edges.filter(e => e.source === 'ai').length };
+    },
+    'graph:addEdge': ({ a, b, type, stance }) => graphMod.addEdge(store, a, b, type, stance),
+    'graph:removeEdge': ({ edgeId }) => ({ removed: graphMod.removeEdge(store, edgeId) }),
     'analysis:followUp': ({ id, digest, history, question }) => withPerson(id, async b => ({
       answer: (await pipeline.analysisFollowUp(store, b, effectiveSettings(), { digest, history, question })).answer,
     })),

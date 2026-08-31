@@ -822,6 +822,38 @@ async function main() {
     storeB.deletePerson(bB.id);
   });
 
+  // ================= 关系图谱 =================
+  console.log('== 关系图谱 ==');
+  await test('图谱：mock 启发式从条目提取人物关系 + 用户手补边在重建后保留', async () => {
+    const storeG = new Store();
+    storeG.init(fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-graph-')));
+    const g1 = storeG.createPerson('小艾', '');
+    storeG.addClaim(g1, { layer: 'life', text: '她和她父亲关系一直比较紧张', epistemic: 'inference', source: 'evidence', refs: [], confidence: 0.7 });
+    storeG.addClaim(g1, { layer: 'basic', text: '闺蜜小林是她为数不多能说真话的人', epistemic: 'inference', source: 'evidence', refs: [], confidence: 0.8 });
+    const g2 = storeG.createPerson('小林', '');
+    const graphMod = require('../src/main/graph');
+    const graph = await graphMod.buildGraph(storeG, [g1, g2], SETTINGS);
+    // 小艾 有档案节点存在
+    assert.ok(graph.nodes.some(n => n.kind === 'person' && n.name === '小艾'));
+    // 启发式应从条目提取 父亲 / 小林
+    assert.ok(graph.nodes.some(n => n.name.includes('父亲') || n.name.includes('小林')), '应提取第三方节点');
+    assert.ok(graph.edges.some(e => e.a === '小艾' || e.b === '小艾'), '应有关系边');
+    // 用户手补边
+    graphMod.addEdge(storeG, '小艾', '小林', '闺蜜', 'positive');
+    const g2graph = storeG.loadGraph();
+    const userEdge = g2graph.edges.find(e => e.source === 'user');
+    assert.ok(userEdge, '手补边应入库');
+    // 重建后手补边保留
+    await graphMod.buildGraph(storeG, [g1, g2], SETTINGS);
+    const after = storeG.loadGraph();
+    assert.ok(after.edges.some(e => e.source === 'user' && e.type === '闺蜜'), '重建不应覆盖手补边');
+    // stale 标记
+    graphMod.markStale(storeG);
+    assert.strictEqual(storeG.loadGraph().stale, true);
+    storeG.deletePerson(g1.id);
+    storeG.deletePerson(g2.id);
+  });
+
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`\n结果：${passed} 通过，${failed} 失败`);
   if (failed) { for (const f of failures) console.log('FAIL', f.name, f.err.stack); process.exit(1); }
