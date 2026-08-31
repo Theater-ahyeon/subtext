@@ -1,0 +1,41 @@
+/* 彩排 · 设计令牌 —— 暖纸手账：暖纸底、衬线标题、墨紫钢笔 + 暖棕对位 */
+:root {
+  color-scheme: light;
+
+  /* 底色：暖纸 */
+  --bg: #f6efe4;
+  --bg-2: #f1e8d8;
+  --panel: #fffdf8;
+  --panel-2: #fbf6ec;
+
+  /* 描边：暖沙 */
+  --border: #e6d9c3;
+  --border-soft: #ede2cf;
+  --border-strong: #d8c7aa;
+
+  /* 文字：墨色 */
+  --text: #33302a;
+  --muted: #6d6456;
+  --faint: #7d7260;
+
+  /* 主色：墨紫 + 暖棕；绿/琥珀/赭为功能色 */
+  --violet: #6b5a9e;
+  --violet-soft: #8a7ab8;
+  --indigo: #5b4a8a;
+  --blue: #5c7fa3;
+  --cyan: #4a8fa6;
+  --emerald: #4a7c59;
+  --green: #4a7c59;
+  --amber: #b97f2e;
+  --rose: #b05a52;
+
+  --grad: linear-gradient(135deg, #6b5a9e, #8a5a2b);
+  --grad-soft: linear-gradient(135deg, rgba(107,90,158,.12), rgba(138,90,43,.07));
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow: 0 10px 30px rgba(90, 70, 40, .1);
+  --glow-ink: 0 6px 20px rgba(107, 90, 158, .25);
+  --font: "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  --serif: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+}

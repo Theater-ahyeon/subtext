@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>生境沙盒 · 演练 · 方向C 原研哉「白」</title>
+<!-- ============================================================
+  方向 C · 设计自述
+  ============================================================
+
+  一、为什么是原研哉（Kenya Hara，日本设计中心 / 无印良品艺术总监）
+
+  这个产品的使用时刻是：深夜、独自、面对一个真实的人、准备一段难以启齿
+  的对话。它需要的不是"视觉冲击"，而是一种信息姿态——克制到近乎沉默，
+  让使用者自己开口。原研哉的设计哲学恰好建立在这个点上：
+
+    · 「白」不是颜色，是容器（emptiness as vessel）。
+      白不表达什么，它容纳将要发生的事。排练室的本质就是这样一间空屋。
+    · Exformation——"不说"也是信息。知道得越少，越要诚实地呈现
+      "不知道"。这与产品红线「留白是允许的」「不脑补」完全同构。
+    · 最低限度的刺激（低温度设计）。物退后，内容站立；
+      情感浓度交给使用者自己带入。
+
+  二、哲学 → 本界面的具体转译
+
+  · 材质：整窗是一张生成り（暖白纸）。没有玻璃拟态、没有阴影、
+    没有发光——屏幕被当作"纸面"而非"屏幕"，夜间长时间注视不刺激。
+    界线全部是 1px 罫线，像一本私人笔记的栏线。
+  · 色彩：墨阶系统。知识密度 = 墨色浓度——事实是浓墨、推断是次墨、
+    空白是留纸。全部信息色只有三种墨 + 纸色，再给一枚"朱"。
+    朱只作印章语义，专属于"私密承诺"：当前页小印、演练目标（仅自己可见）
+    的封印、预测单栏底的「仅复盘可见」私印。红色出现在哪里，哪里就是
+    "只有我知道的事"。
+  · 字型：明朝体（Noto Serif SC）一族贯通，只以字重与字号分层，
+    标签用疏排小字，如书物边界的注记。断网回退 Songti SC / SimSun，
+    版式不破。拒绝无衬线 UI 惯性——笔记本是手写的、衬线的。
+  · 密度与节奏：中轴三段呼吸——场景头部（契约）、对话（正文）、
+    空台（输入线）。对话最后一行「嗯。」之下刻意留出一整段空，
+    如排练室里尚未被使用的地板，输入线是唯一的底部锚点。
+    三栏不等宽（336 / 弹性 / 300），非对称，右侧比左侧轻——
+    预测单是尚未兑现的约定，理应单薄。
+
+  三、视觉母题：「留白 · 已知 / 未知」（spec 第五节其一）
+
+  form 直接来自产品内容的认识层级三态：事实 / 推断 / 空白。
+  我把它们转成同一枚 9px 方点的三种墨密度：实方（事实）、半方（推断）、
+  空方（空白），速览栏顶部有图例。母题的锚点在速览栏中：
+  「她与父亲的关系 —— 未知」被实体化为一只 84px 高的空框，
+  框内只有一枚 8px 空心方点——"不知道"在这里不是缺内容，
+  而是一件被郑重陈列的空器。全 UI 的形状语法只有方点一种：
+  墨 = 实方，未知 = 空方，圆角一律 ≤2px。
+
+  四、结构选择（spec 第六节，三轴均与常规 dashboard 骨架不同）
+
+  ① 导航形态：弃左侧栏，改为顶部「目次」横栏——像一本书的纲目页，
+    八个章节横排，当前章「演练」以一枚朱印标记。
+  ② 对话与速览的关系：书籍的"正文 + 边注"结构。对话是正文主栏，
+    她的生境速览退为左侧傍注栏——不是卡片面板，而是以罫线分隔的
+    批注列，读者（使用者）像翻阅一本做了边注的访谈手记。
+  ③ 场景与预测单的组织：场景设定为对话栏内嵌的"舞台头部"；
+    预测单不是按钮触发的弹层，而是右侧常驻的"契约栏"——
+    在演练进行的每一秒，三条预测都注视着你，随时可被冻结。
+
+  五、合规自查
+
+  · 五组真实内容齐备；全部文字来自 spec，无编造数据。
+  · 正文 ≥15px，辅助标签 ≥12px；墨色对比度：浓墨 ≈14:1、
+    次墨 ≈10:1、注记墨 ≈6:1、朱 ≈5.4:1，均 ≥4.5:1。
+  · 无渐变装饰、无 emoji 图标、无左彩边圆角卡、无人脸 SVG、
+    无深底霓虹；中文引号一律「」。
+  ============================================================ -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F1E7;        /* 生成り · 暖白纸 */
+    --ink:#26221A;          /* 浓墨 · 事实 */
+    --ink-2:#3E382C;        /* 次墨 · 推断 */
+    --ink-3:#5F5747;        /* 注记墨 · 标签与旁注 */
+    --line:#DCD3BE;         /* 罫线 */
+    --line-2:#BCB092;       /* 界线 · 稍重 */
+    --shu:#A63E2B;          /* 朱 · 印 */
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Noto Serif SC","Source Han Serif SC","Songti SC","SimSun",serif;
+    font-size:15px;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+  .app{height:100vh;display:grid;grid-template-rows:72px 1fr 40px}
+
+  /* ---------- 顶部 · 目次 ---------- */
+  header{display:flex;align-items:center;gap:40px;padding:0 40px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:11px;white-space:nowrap}
+  .seal{width:18px;height:18px;background:var(--shu);color:var(--paper);
+        font-size:11px;line-height:18px;text-align:center;border-radius:1px;font-weight:500}
+  .brand b{font-size:16px;font-weight:600;letter-spacing:.16em}
+  nav{display:flex;gap:30px}
+  nav a{font-size:14px;color:var(--ink-3);text-decoration:none;letter-spacing:.08em;
+        display:flex;align-items:center;gap:8px;padding-bottom:5px;border-bottom:2px solid transparent}
+  nav a.now{color:var(--ink);font-weight:600;border-bottom-color:var(--ink)}
+  .mini-seal{width:16px;height:16px;background:var(--shu);color:var(--paper);
+             font-size:10px;line-height:16px;text-align:center;border-radius:1px;font-weight:500}
+  .spacer{flex:1}
+  .person{text-align:right;line-height:1.4;white-space:nowrap}
+  .cap{font-size:12px;color:var(--ink-3);letter-spacing:.32em;font-weight:500}
+  .person .name{font-size:16px;font-weight:600;letter-spacing:.22em;margin-top:2px}
+
+  /* ---------- 中段 · 三界 ---------- */
+  main{display:grid;grid-template-columns:336px 1fr 300px;min-height:0}
+  .colL{border-right:1px solid var(--line);padding:28px 28px 24px 40px;display:flex;flex-direction:column;min-height:0}
+  .colR{border-left:1px solid var(--line);padding:28px 40px 24px 30px;display:flex;flex-direction:column;min-height:0}
+  .stage{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+
+  /* ---------- 左 · 生境速览（边注） ---------- */
+  .legend{display:flex;gap:18px;margin:13px 0 6px}
+  .legend span{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-3);letter-spacing:.14em}
+  .sw{width:9px;height:9px;display:inline-block;border-radius:1px;flex:none}
+  .sw-f{background:var(--ink)}
+  .sw-i{background:linear-gradient(90deg,var(--ink) 50%,#D8CFB6 50%)}
+  .sw-b{border:1px solid var(--line-2)}
+  .entry{padding:16px 0 15px;border-bottom:1px solid var(--line)}
+  .entry.open{border-bottom:none}
+  .layer{font-size:12px;color:var(--ink-3);letter-spacing:.3em;margin-bottom:8px}
+  .entry p{font-size:15px;line-height:1.7;color:var(--ink-2)}
+  .entry.fact p{color:var(--ink)}
+  .entry.blank p{color:var(--ink-3)}
+  .badge{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:12px;color:var(--ink-3);letter-spacing:.06em}
+  .void{height:84px;border:1px solid var(--line-2);margin:13px 0 3px;
+        display:flex;align-items:center;justify-content:center}
+  .void i{width:8px;height:8px;border:1px solid var(--line-2);display:block}
+  .guard{margin-top:auto;border-top:1px solid var(--line);padding-top:13px;
+         font-size:13px;color:var(--ink-3);letter-spacing:.05em}
+
+  /* ---------- 中 · 场景头部 + 对话流 ---------- */
+  .shead{display:flex;justify-content:space-between;align-items:flex-end;gap:28px;
+         padding:30px 56px 24px 44px;border-bottom:1px solid var(--line)}
+  .shead h1{font-size:24px;font-weight:600;letter-spacing:.04em;margin:10px 0 14px;line-height:1.3}
+  .meta{display:flex;flex-direction:column;gap:8px}
+  .meta span{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink-3);letter-spacing:.04em}
+  .mk{width:8px;height:8px;display:inline-block;border-radius:1px;flex:none}
+  .mk-open{border:1px solid var(--ink-3)}
+  .mk-seal{background:var(--shu)}
+  .btn{background:var(--ink);color:var(--paper);font-family:inherit;font-size:14px;letter-spacing:.14em;
+       padding:13px 22px;border:none;border-radius:2px;white-space:nowrap;cursor:pointer}
+  .dlg{padding:26px 120px 24px 44px;flex:1;display:flex;flex-direction:column;min-height:0}
+  .dlg .cap{display:block;margin-bottom:24px}
+  .turn{margin-bottom:30px}
+  .who{font-size:12px;color:var(--ink-3);letter-spacing:.24em;margin-bottom:8px;
+       display:flex;align-items:center;gap:8px}
+  .tw{width:7px;height:7px;border:1px solid var(--ink-3);display:inline-block;flex:none}
+  .line-t{font-size:18px;line-height:1.75;letter-spacing:.02em;max-width:640px;color:var(--ink-2)}
+  .turn.me .line-t{color:var(--ink)}
+  .note{margin-top:9px;font-size:13px;color:var(--ink-3);letter-spacing:.03em;
+        display:flex;align-items:center;gap:10px}
+  .note::before{content:"";width:36px;height:1px;background:var(--line-2);flex:none}
+  .composer{margin-top:auto;border-top:1px solid var(--line);padding:21px 0 6px;
+            display:flex;justify-content:space-between;align-items:center}
+  .composer .ph{font-size:15px;color:var(--ink-3);letter-spacing:.14em}
+  .composer .ent{font-size:15px;color:var(--ink-3)}
+
+  /* ---------- 右 · 预测单（契约栏） ---------- */
+  .pcap{font-size:12px;color:var(--shu);letter-spacing:.32em;font-weight:600}
+  .ptitle{font-size:15px;font-weight:600;letter-spacing:.08em;margin-top:8px}
+  .prule{border-top:1px solid var(--line);margin-top:16px}
+  .clause{padding:18px 0 20px;border-bottom:1px solid var(--line)}
+  .ctop{display:flex;justify-content:space-between;align-items:baseline}
+  .cnum{font-size:13px;color:var(--ink-3);letter-spacing:.3em}
+  .pct{font-size:30px;font-weight:300;color:var(--ink);line-height:1}
+  .pct i{font-style:normal;font-size:13px;color:var(--ink-3);margin-left:2px}
+  .clause p{font-size:15px;line-height:1.65;color:var(--ink-2);margin-top:9px}
+  .meter{height:2px;background:#E3DBC5;margin-top:14px;position:relative}
+  .meter i{position:absolute;left:0;top:-1px;height:4px;background:var(--ink)}
+  .stamp{margin-top:auto;align-self:flex-end;writing-mode:vertical-rl;
+         font-size:12px;letter-spacing:.3em;color:var(--shu);
+         border:1px solid var(--shu);border-radius:1px;padding:12px 6px}
+
+  /* ---------- 底部 · 状态 ---------- */
+  footer{display:flex;justify-content:space-between;align-items:center;
+         border-top:1px solid var(--line);padding:0 40px}
+  .st{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-3);letter-spacing:.1em}
+  .st i{width:7px;height:7px;background:var(--ink-3);display:inline-block;border-radius:1px;flex:none}
+  footer .r{font-size:12px;color:var(--ink-3);letter-spacing:.18em}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ① 顶部目次导航（替代左侧栏） -->
+  <header>
+    <div class="brand"><span class="seal">境</span><b>生境沙盒</b></div>
+    <nav>
+      <a href="#">人物</a>
+      <a href="#">生境卡</a>
+      <a href="#">证据库</a>
+      <a href="#">导入</a>
+      <a href="#">24问访谈</a>
+      <a href="#" class="now"><span class="mini-seal">演</span>演练</a>
+      <a href="#">校准闭环</a>
+      <a href="#">设置</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="person">
+      <div class="cap">当前人物</div>
+      <div class="name">林晚</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ② 左 · 她的生境速览：正文旁的边注栏（母题：墨阶 + 空器） -->
+    <aside class="colL">
+      <div class="cap">她的生境速览</div>
+      <div class="legend">
+        <span><i class="sw sw-f"></i>事实</span>
+        <span><i class="sw sw-i"></i>推断</span>
+        <span><i class="sw sw-b"></i>空白</span>
+      </div>
+
+      <div class="entry fact">
+        <div class="layer">基础信息</div>
+        <p>林晚 · 26 · 出版业编辑</p>
+        <div class="badge"><i class="sw sw-f"></i>事实 · 引用证据 ×12</div>
+      </div>
+
+      <div class="entry">
+        <div class="layer">人物性情</div>
+        <p>面对道歉往往先确认动机，而非先接住情绪</p>
+        <div class="badge"><i class="sw sw-i"></i>推断 · 置信度 0.62</div>
+      </div>
+
+      <div class="entry">
+        <div class="layer">场景表达</div>
+        <p>短句、常省略主语；「嗯」未必是同意</p>
+        <div class="badge"><i class="sw sw-i"></i>推断 · 置信度 0.55</div>
+      </div>
+
+      <div class="entry blank open">
+        <div class="layer">空白</div>
+        <p>她与父亲的关系 —— 未知</p>
+        <div class="void"><i></i></div>
+        <div class="badge"><i class="sw sw-b"></i>空白 · 留白是允许的</div>
+      </div>
+
+      <div class="guard">卡片是倾向，不是台词库。</div>
+    </aside>
+
+    <!-- 中 · 场景头部（内嵌） + 对话流正文 -->
+    <section class="stage">
+      <div class="shead">
+        <div>
+          <div class="cap">场景设定</div>
+          <h1>道歉 —— 为三个月前的那次争吵</h1>
+          <div class="meta">
+            <span><i class="mk mk-open"></i>情境设定：她可感知</span>
+            <span><i class="mk mk-seal"></i>演练目标：仅复盘可见，她不知道这是演练</span>
+          </div>
+        </div>
+        <button class="btn">结束演练并生成预测单</button>
+      </div>
+
+      <div class="dlg">
+        <span class="cap">对话流 · 数字孪生</span>
+
+        <div class="turn me">
+          <div class="who">我</div>
+          <p class="line-t">「那天是我不对，话说重了。这半年我一直在想这件事。」</p>
+        </div>
+
+        <div class="turn">
+          <div class="who"><i class="tw"></i>她（孪生 · 林晚）</div>
+          <p class="line-t">「你现在来说这个，是因为快过年了吗？」</p>
+        </div>
+
+        <div class="turn me">
+          <div class="who">我</div>
+          <p class="line-t">「有一部分。但主要是，我一直记得你当时没说完的那句话。」</p>
+        </div>
+
+        <div class="turn">
+          <div class="who"><i class="tw"></i>她（孪生 · 林晚）</div>
+          <p class="line-t">「嗯。」</p>
+          <div class="note">她可以沉默、追问、拒绝——卡内标注 [推断]</div>
+        </div>
+
+        <div class="composer">
+          <span class="ph">说点什么……</span>
+          <span class="ent">↵</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ③ 右 · 预测单：常驻契约栏 -->
+    <aside class="colR">
+      <div class="pcap">预测单</div>
+      <div class="ptitle">演练结束前冻结预测</div>
+      <div class="prule"></div>
+
+      <div class="clause">
+        <div class="ctop"><span class="cnum">一</span><span class="pct">65<i>%</i></span></div>
+        <p>她先追问动机而非接受道歉</p>
+        <div class="meter"><i style="width:65%"></i></div>
+      </div>
+
+      <div class="clause">
+        <div class="ctop"><span class="cnum">二</span><span class="pct">55<i>%</i></span></div>
+        <p>她用反问确认我的真实来意</p>
+        <div class="meter"><i style="width:55%"></i></div>
+      </div>
+
+      <div class="clause">
+        <div class="ctop"><span class="cnum">三</span><span class="pct">80<i>%</i></span></div>
+        <p>她不会当场和好，但会保留对话渠道</p>
+        <div class="meter"><i style="width:80%"></i></div>
+      </div>
+
+      <div class="stamp">仅复盘可见</div>
+    </aside>
+  </main>
+
+  <footer>
+    <div class="st"><i></i>演示模式（离线）</div>
+    <div class="r">本地优先 · 数据只在本机</div>
+  </footer>
+
+</div>
+</body>
+</html>

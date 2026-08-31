@@ -1,5 +1,5 @@
-appId: com.habitat.sandbox
-productName: Habitat Sandbox
+appId: com.theater-ahyeon.rehearsal
+productName: Rehearsal
 copyright: Copyright © 2026 Theater-ahyeon (MIT)
 
 directories:
@@ -29,8 +29,8 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: 生境沙盒
-  uninstallDisplayName: 生境沙盒 Habitat Sandbox
+  shortcutName: 彩排
+  uninstallDisplayName: 彩排 Rehearsal
 
 mac:
   icon: build/icon.png

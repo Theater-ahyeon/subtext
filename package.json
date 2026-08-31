@@ -1,13 +1,14 @@
 {
-  "name": "habitat-sandbox",
-  "version": "1.1.0",
-  "description": "生境沙盒 Habitat Sandbox — 基于 AIRP 人物生境写法的社交演练沙盒：数字孪生 + 预测校准闭环，本地优先。",
+  "name": "rehearsal",
+  "version": "1.2.0",
+  "description": "彩排 Rehearsal —— 为重要对话做练习的本地工具：整理你对 TA 的了解，和「TA 的模拟」把那段话先说一遍，再用真实反馈修正理解。",
   "main": "src/main/main.js",
   "author": "Theater-ahyeon",
   "license": "MIT",
   "private": true,
   "scripts": {
     "start": "electron .",
+    "web": "node web/server.js",
     "test": "node tests/run.js",
     "dist": "electron-builder --win nsis zip",
     "dist:all": "electron-builder -mwl"

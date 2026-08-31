@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('habitat', {
   evidence: {
     add: (p) => invoke('evidence:add', p),
     del: (p) => invoke('evidence:delete', p),
+    media: (p) => invoke('evidence:media', p),
   },
   imp: {
     parse: (p) => invoke('import:parse', p),
@@ -59,6 +60,13 @@ contextBridge.exposeInMainWorld('habitat', {
     feedback: (p) => invoke('feedback:submit', p),
     attributions: (p) => invoke('attribution:list', p),
     undo: (p) => invoke('attribution:undo', p),
+  },
+  memory: {
+    list: (p) => invoke('memory:list', p),
+    del: (p) => invoke('memory:delete', p),
+    clear: (p) => invoke('memory:clear', p),
+    rebuild: (p) => invoke('memory:rebuild', p),
+    recall: (p) => invoke('memory:recall', p),
   },
   stats: (p) => invoke('stats:get', p),
   radar: (p) => invoke('radar:get', p),

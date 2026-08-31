@@ -2,3 +2,9 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+.smoke-data/
+skills-lock.json
+scripts/
+.agents/
+.claude/

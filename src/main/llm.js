@@ -56,6 +56,75 @@ function splitSystem(messages) {
   return { system: systemParts.join('\n\n'), messages: rest };
 }
 
+/** 消息 content 是否为多模态块数组（含图片） */
+function hasImages(messages) {
+  return (messages || []).some(m => Array.isArray(m.content) && m.content.some(p => p && p.type === 'image'));
+}
+
+/**
+ * 统一多模态形状 → 各协议请求体。上游允许两种 content：
+ *   字符串（纯文本）或 [{type:'text',text}, {type:'image',mime,dataB64}]（图片为原始 base64，无 data: 前缀）。
+ * 纯文本路径保持原样直传（不复制消息体）；只有包含图片的消息才转换。
+ */
+const IMAGE_PREFIX_RE = /^data:[^,]*,/;
+function stripDataUrl(s) { return String(s || '').replace(IMAGE_PREFIX_RE, ''); }
+function textOf(m) { return Array.isArray(m.content) ? m.content.filter(p => p && p.type === 'text').map(p => p.text).join('\n') : m.content; }
+function imagesOf(m) { return Array.isArray(m.content) ? m.content.filter(p => p && p.type === 'image') : []; }
+
+/** OpenAI 兼容 Chat Completions：content_parts 数组 */
+function toOpenAIMessages(messages) {
+  if (!hasImages(messages)) return messages;
+  return messages.map(m => {
+    const imgs = imagesOf(m);
+    if (!imgs.length) return { role: m.role, content: textOf(m) };
+    const parts = [];
+    const txt = textOf(m);
+    if (txt) parts.push({ type: 'text', text: txt });
+    for (const im of imgs) parts.push({ type: 'image_url', image_url: { url: `data:${im.mime || 'image/png'};base64,${stripDataUrl(im.dataB64)}` } });
+    return { role: m.role, content: parts };
+  });
+}
+
+/** Anthropic Messages：system 独立 + content blocks */
+function toAnthropicMessages(messages) {
+  const { system, messages: rest } = splitSystem(messages);
+  const out = rest.map(m => {
+    const imgs = imagesOf(m);
+    if (!imgs.length) return { role: m.role, content: textOf(m) };
+    const blocks = [];
+    const txt = textOf(m);
+    if (txt) blocks.push({ type: 'text', text: txt });
+    for (const im of imgs) blocks.push({ type: 'image', source: { type: 'base64', media_type: im.mime || 'image/png', data: stripDataUrl(im.dataB64) } });
+    return { role: m.role, content: blocks };
+  });
+  return { system, messages: out };
+}
+
+/** Gemini generateContent：role 映射 + inline_data parts */
+function toGeminiContents(messages) {
+  const { system, messages: rest } = splitSystem(messages);
+  const contents = rest.map(m => {
+    const imgs = imagesOf(m);
+    const parts = [];
+    const txt = textOf(m);
+    if (txt) parts.push({ text: txt });
+    for (const im of imgs) parts.push({ inlineData: { mimeType: im.mime || 'image/png', data: stripDataUrl(im.dataB64) } });
+    if (!parts.length) parts.push({ text: '' });
+    return { role: m.role === 'assistant' ? 'model' : 'user', parts };
+  });
+  return { system, contents };
+}
+
+/** Ollama /api/chat：images 数组（与 message 同序） */
+function toOllamaMessages(messages) {
+  if (!hasImages(messages)) return messages;
+  return messages.map(m => {
+    const imgs = imagesOf(m);
+    if (!imgs.length) return { role: m.role, content: textOf(m) };
+    return { role: m.role, content: textOf(m), images: imgs.map(im => stripDataUrl(im.dataB64)) };
+  });
+}
+
 const ADAPTERS = {
   openai: {
     label: 'OpenAI 兼容',
@@ -63,7 +132,7 @@ const ADAPTERS = {
     needsKey: true,
     build({ settings, messages, temperature, maxTokens }) {
       const url = normalizeBaseUrl(settings.baseUrl || DEFAULT_BASE.openai);
-      const body = { model: settings.model, messages, temperature, stream: false };
+      const body = { model: settings.model, messages: toOpenAIMessages(messages), temperature, stream: false };
       if (maxTokens) body.max_tokens = maxTokens;
       return { url, headers: { ...JSON_HEADERS, 'Authorization': 'Bearer ' + (settings.apiKey || '') }, body };
     },
@@ -88,7 +157,7 @@ const ADAPTERS = {
     build({ settings, messages, temperature, maxTokens }) {
       const url = (settings.baseUrl || '').trim();
       if (!url) throw new Error('请填入 Azure 部署的完整 Chat Completions 地址（含 api-version 查询参数）');
-      const body = { messages, temperature, stream: false };
+      const body = { messages: toOpenAIMessages(messages), temperature, stream: false };
       if (maxTokens) body.max_tokens = maxTokens;
       return { url, headers: { ...JSON_HEADERS, 'api-key': settings.apiKey || '' }, body };
     },
@@ -107,7 +176,7 @@ const ADAPTERS = {
     build({ settings, messages, temperature, maxTokens }) {
       const base = (settings.baseUrl || DEFAULT_BASE.anthropic).trim().replace(/\/+$/, '');
       const url = base.endsWith('/v1/messages') ? base : base + '/v1/messages';
-      const { system, messages: rest } = splitSystem(messages);
+      const { system, messages: rest } = toAnthropicMessages(messages);
       const body = {
         model: settings.model,
         max_tokens: maxTokens || 2048, // Anthropic 必填
@@ -141,9 +210,9 @@ const ADAPTERS = {
       const model = (settings.model || '').trim();
       if (!model) throw new Error('请填写 Gemini 模型名（如 gemini-2.5-flash）');
       const url = base + '/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
-      const { system, messages: rest } = splitSystem(messages);
+      const { system, contents } = toGeminiContents(messages);
       const body = {
-        contents: rest.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+        contents,
         generationConfig: { temperature, maxOutputTokens: maxTokens || 2048 },
       };
       if (system) body.systemInstruction = { parts: [{ text: system }] };
@@ -178,7 +247,7 @@ const ADAPTERS = {
     build({ settings, messages, temperature }) {
       const base = (settings.baseUrl || DEFAULT_BASE.ollama).trim().replace(/\/+$/, '');
       const url = base + '/api/chat';
-      const body = { model: settings.model, messages, stream: false, options: { temperature } };
+      const body = { model: settings.model, messages: toOllamaMessages(messages), stream: false, options: { temperature } };
       return { url, headers: { ...JSON_HEADERS }, body };
     },
     parse(data) {
@@ -199,8 +268,8 @@ const MOCK_REPLY = {
   TWIN: '（她抬起头，把手机扣在桌上）「……所以你今天找我，是有事吧？」',
   REVIEW: [
     '## 复盘报告（演示模式）',
-    '### 一、孪生演绎质量',
-    '- 连续性：本轮扮演与生境卡中的性情倾向一致，未出现性格漂移。',
+    '### 一、模拟演绎质量',
+    '- 连续性：本轮扮演与理解卡中的性情倾向一致，未出现性格漂移。',
     '- 变化性：对不同话题的回应体量有区分，未复读固定动作。',
     '- 迁移能力：面对卡片未覆盖的问题时，回复停留在试探而非编造往事，符合"留白"原则。',
     '- 独立性：她有自己的事情线（工作压力），未完全围绕你的问题打转。',
@@ -209,14 +278,14 @@ const MOCK_REPLY = {
     '### 二、你的沟通复盘',
     '- 有效：开头直接说明来意，给了对方确定感。',
     '- 可改进：连续追问两件事，她只回应了第一件——一次一个问题是更稳的节奏。',
-    '### 三、下轮演练建议',
+    '### 三、下轮彩排建议',
     '- 试一个她明确拒绝你的分支，练习接住拒绝后继续对话。',
     '### 四、现实验证清单',
-    '- 她最近的作息压力来源（生境卡中缺失）——下次聊天可以自然带出。',
+    '- 她最近的作息压力来源（理解卡中缺失）——下次聊天可以自然带出。',
   ].join('\n'),
   HYPOTHESIS: JSON.stringify({
     hypotheses: [
-      { text: '她最近在忙一件不想多谈的事，回复变短是自我保护，不是对你不满', prob: 0.45, basis: '生境卡性情层：压力期倾向于收缩表达', verify: '聊轻松话题时观察她是否恢复平时句长' },
+      { text: '她最近在忙一件不想多谈的事，回复变短是自我保护，不是对你不满', prob: 0.45, basis: '理解卡性情层：压力期倾向于收缩表达', verify: '聊轻松话题时观察她是否恢复平时句长' },
       { text: '她对当前话题不感兴趣，但出于礼貌维持回应', prob: 0.35, basis: '场景表达层：不熟的话题常用短句维持', verify: '换一个她熟悉的领域看参与度' },
       { text: '她没注意到你语气里的试探，按字面意思回答', prob: 0.2, basis: '历史记录中她曾明确说不擅长读暗示', verify: '把话说明确再看反应' },
     ],
@@ -286,10 +355,16 @@ function extractProviderError(provider, bodyText) {
 function statusHint(status) {
   if (status === 401 || status === 403) return '：密钥无效或无权限，请检查 API Key';
   if (status === 404) return '：地址或模型名不存在，请检查 API 地址与模型名';
-  if (status === 413 || status === 400) return '：内容可能过长或参数有误，建议结束本场演练后新开一场，或减少素材';
+  if (status === 413 || status === 400) return '：内容可能过长或参数有误，建议结束本场彩排后新开一场，或减少素材';
   if (status === 429) return '：触发速率限制，稍后再试';
   if (status >= 500) return '：服务商暂时故障，稍后再试';
   return '';
+}
+
+/** 从服务商报错文本识别"当前模型不支持图片输入"，用于归纳管线自动降级重试 */
+function looksLikeVisionUnsupported(errText) {
+  const t = String(errText || '');
+  return /image|multimodal|vision|视觉|图片|multimedia|input_type|not support|unsupported.*(content|modal)/i.test(t) && !/rate|limit|timeout|超时|429/i.test(t);
 }
 
 async function httpJson(url, headers, body, timeoutMs) {
@@ -391,4 +466,6 @@ function extractJson(text) {
 module.exports = {
   chat, extractJson, normalizeBaseUrl, mockRespond, extractProviderError,
   ADAPTERS, DEFAULT_BASE, fetchModels, splitSystem,
+  hasImages, toOpenAIMessages, toAnthropicMessages, toGeminiContents, toOllamaMessages,
+  looksLikeVisionUnsupported,
 };

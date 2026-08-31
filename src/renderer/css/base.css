@@ -1,0 +1,30 @@
+/* 彩排 · 基础层：重置、排版、滚动条、焦点（暖纸亮色版） */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* hidden 属性必须始终生效：modal-backdrop/loading-overlay 等的 display 规则会盖过 UA 的 display:none */
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.65;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: rgba(107, 90, 158, .25); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(138, 90, 43, .28); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(138, 90, 43, .45); background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+input, textarea, select, button { font-family: inherit; }
+:focus-visible { outline: 2px solid rgba(91, 74, 138, .75); outline-offset: 2px; border-radius: 6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

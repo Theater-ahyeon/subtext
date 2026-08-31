@@ -7,9 +7,23 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { nativeImage } = (() => {
+  // 桌面宿主复用 Electron nativeImage 缩图；Web 宿主（纯 Node）退化为"原图即缩略图"
+  try { return { nativeImage: require('electron').nativeImage }; } catch { return { nativeImage: null }; }
+})();
 
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
+
+/** 图片安全边界：只认 PNG/JPEG/GIF/WebP 魔数（不信任扩展名/渲染层声明），大小上限 15MB */
+const IMAGE_MAGIC = [
+  { ext: 'png', mime: 'image/png', test: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47 },
+  { ext: 'jpg', mime: 'image/jpeg', test: (b) => b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF },
+  { ext: 'gif', mime: 'image/gif', test: (b) => b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38 },
+  { ext: 'webp', mime: 'image/webp', test: (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 },
+];
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+const THUMB_MAX_DIM = 320;
 
 function atomicWrite(file, data) {
   const tmp = file + '.tmp-' + process.pid + '-' + Date.now();
@@ -101,6 +115,12 @@ class Store {
       analysisTemperature: 0.3,
       maxTokens: 2048,
       timeoutMs: 90000,
+      // 事件记忆向量化：留空 = 跟随主 provider（anthropic/azure 无 embedding 端点时自动降级本地词面检索）
+      embedProvider: '',
+      embedBaseUrl: '',
+      embedApiKey: '',
+      embedApiKeyEnc: '',
+      embedModel: '',
     };
   }
 
@@ -113,8 +133,75 @@ class Store {
     return path.join(this.dataDir, 'persons', safe + '.json');
   }
 
+  // ---------- 证据图片（本地文件，不进 JSON 档案） ----------
+  mediaDir(personId) { return path.join(this.dataDir, 'media', this.safeMediaName(personId)); }
+
+  /** media 文件名同样只允许 uuid 形状，杜绝穿越与后缀注入 */
+  safeMediaName(name) {
+    const s = String(name || '');
+    if (!/^[0-9a-zA-Z-]+$/.test(s)) throw new Error('非法的媒体文件名');
+    return s;
+  }
+
+  /** 校验字节并落盘原图 + 生成缩略图（nativeImage 不可用时缩略图=原图字节） */
+  saveImage(personId, buf) {
+    if (!Buffer.isBuffer(buf) || !buf.length) throw new Error('图片内容为空');
+    if (buf.length > MAX_IMAGE_BYTES) throw new Error(`图片超过 15MB（当前 ${Math.round(buf.length / 1024 / 1024)}MB），请压缩后再存证`);
+    const kind = IMAGE_MAGIC.find(k => { try { return k.test(buf); } catch { return false; } });
+    if (!kind) throw new Error('不支持的图片格式（仅 PNG / JPG / GIF / WebP）');
+    const dir = this.mediaDir(personId);
+    fs.mkdirSync(dir, { recursive: true });
+    const name = uid();
+    const file = path.join(dir, name + '.' + kind.ext);
+    const thumb = path.join(dir, name + '.thumb.' + (kind.ext === 'jpg' ? 'jpg' : kind.ext));
+    atomicWrite(file, buf);
+    let thumbBuf = buf;
+    try {
+      if (nativeImage) {
+        const img = nativeImage.createFromBuffer(buf);
+        if (!img.isEmpty()) {
+          const sz = img.getSize();
+          if (Math.max(sz.width, sz.height) > THUMB_MAX_DIM) {
+            thumbBuf = img.resize({ width: Math.min(sz.width, THUMB_MAX_DIM) }).toJPEG(72);
+          } else {
+            thumbBuf = kind.ext === 'jpg' ? img.toJPEG(72) : buf;
+          }
+        }
+      }
+    } catch { /* 缩略图失败不阻塞存证 */ }
+    atomicWrite(thumb, thumbBuf);
+    return { media: name + '.' + kind.ext, mime: kind.mime };
+  }
+
+  /** 读取指定媒体文件（原图或缩略图）；不存在返回 null */
+  readImage(personId, media, { thumb = false } = {}) {
+    const base = path.basename(String(media || ''));
+    if (!/^[0-9a-zA-Z-]+\.(png|jpg|gif|webp)$/.test(base)) return null;
+    let file = path.join(this.mediaDir(personId), base);
+    if (thumb) {
+      const t = file.replace(/\.([a-z]+)$/, '.thumb.$1');
+      if (fs.existsSync(t)) file = t;
+    }
+    try { return { data: fs.readFileSync(file), mime: IMAGE_MAGIC.find(k => k.ext === base.split('.').pop()) ? (IMAGE_MAGIC.find(k => k.ext === base.split('.').pop()).mime) : 'application/octet-stream' }; }
+    catch { return null; }
+  }
+
+  deleteImage(personId, media) {
+    if (!media) return;
+    const base = path.basename(String(media));
+    if (!/^[0-9a-zA-Z-]+\.(png|jpg|gif|webp)$/.test(base)) return;
+    for (const f of [base, base.replace(/\.([a-z]+)$/, '.thumb.$1')]) {
+      try { fs.rmSync(path.join(this.mediaDir(personId), f), { force: true }); } catch {}
+    }
+  }
+
+  /** 删除人物时清空其媒体目录（隐私承诺：删除=真删除） */
+  purgePersonMedia(personId) {
+    try { fs.rmSync(this.mediaDir(personId), { recursive: true, force: true }); } catch {}
+  }
+
   // ---------- settings ----------
-  static SETTING_KEYS = ['provider', 'baseUrl', 'apiKey', 'apiKeyEnc', 'model', 'temperature', 'analysisTemperature', 'maxTokens', 'timeoutMs'];
+  static SETTING_KEYS = ['provider', 'baseUrl', 'apiKey', 'apiKeyEnc', 'model', 'temperature', 'analysisTemperature', 'maxTokens', 'timeoutMs', 'embedProvider', 'embedBaseUrl', 'embedApiKey', 'embedApiKeyEnc', 'embedModel'];
   loadSettings() {
     try { return { ...this.defaultSettings(), ...JSON.parse(fs.readFileSync(this.settingsFile(), 'utf8')) }; }
     catch { return this.defaultSettings(); }
@@ -182,9 +269,10 @@ class Store {
   }
 
   // ---------- person 内部通用操作 ----------
-  addEvidence(bundle, { sourceType, text, ts, sender, isSelf }) {
+  addEvidence(bundle, { sourceType, text, ts, sender, isSelf, media, mediaMime }) {
     const seq = (bundle.evidence.reduce((m, e) => Math.max(m, e.seq || 0), 0)) + 1;
     const item = { id: uid(), seq, sourceType, text, ts: ts || '', sender: sender || '', isSelf: isSelf == null ? null : !!isSelf, createdAt: now() };
+    if (media) { item.media = media; item.mediaMime = mediaMime || 'image/png'; }
     bundle.evidence.push(item);
     return item;
   }
@@ -204,14 +292,25 @@ class Store {
 
   // ---------- 统计 ----------
   computeStats(bundle) {
-    // 命中率口径：有预测单且未撤销的归因全部计入分母；错误类 verdict（错但知道错在哪层）按未命中计，不再剔除
+    // 命中率口径：有预判且未撤销的差异分析全部计入分母；错误类 verdict（错但知道错在哪层）按未命中计。
+    // model-bias（模拟扮演偏离理解卡）不进命中率——它衡量扮演质量而非理解卡质量，单列计数。
     const RESULT_VERDICTS = { hit: 'hit', partial: 'partial', miss: 'miss', 'fact-error': 'miss', 'material-missing': 'miss', 'temperament-error': 'miss', 'expression-error': 'miss' };
+    const OUTCOME = { hit: 1, partial: 0.5 }; // Brier 真实结果编码：命中=1，部分=0.5，其余=0
     const attributed = bundle.attributions.filter(a => a.predictionId && !a.undone);
-    const valid = attributed.filter(a => RESULT_VERDICTS[a.verdict]);
-    const unknown = attributed.length - valid.length;
-    const hit = valid.filter(a => RESULT_VERDICTS[a.verdict] === 'hit').length;
-    const partial = valid.filter(a => RESULT_VERDICTS[a.verdict] === 'partial').length;
-    const total = valid.length;
+    const scored = attributed.filter(a => RESULT_VERDICTS[a.verdict]);
+    const modelBiased = attributed.filter(a => a.verdict === 'model-bias').length;
+    const unknown = attributed.length - scored.length - modelBiased;
+    const hit = scored.filter(a => RESULT_VERDICTS[a.verdict] === 'hit').length;
+    const partial = scored.filter(a => RESULT_VERDICTS[a.verdict] === 'partial').length;
+    const total = scored.length;
+    // Brier 校准（Top1 口径）：冻结时记录的 Top1 假设概率 vs 真实结果；旧归因无 topProb 则跳过
+    let brierSum = 0, brierSamples = 0;
+    for (const a of attributed) {
+      if (typeof a.topProb !== 'number' || !RESULT_VERDICTS[a.verdict]) continue;
+      const outcome = OUTCOME[a.verdict] || 0;
+      brierSum += Math.pow(a.topProb - outcome, 2);
+      brierSamples++;
+    }
     const byLayer = { basic: 0, life: 0, temperament: 0, expression: 0 };
     const byEpistemic = { fact: 0, inference: 0, blank: 0 };
     const bySource = { evidence: 0, user: 0, ai: 0 };
@@ -234,9 +333,13 @@ class Store {
       attributions: total,
       attributionsAll: attributed.length,
       unknownVerdicts: unknown,
+      modelBiased,
       hitRateTop1: total ? hit / total : null,
       hitRateTop2: total ? (hit + partial) / total : null,
       loopCompletion: bundle.predictions.length ? Math.min(1, linkedFeedbacks / bundle.predictions.length) : null,
+      brierTop1: brierSamples ? brierSum / brierSamples : null,
+      brierSamples,
+      memories: (bundle.memories && bundle.memories.items) ? bundle.memories.items.length : 0,
     };
   }
 }

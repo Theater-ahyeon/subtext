@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>生境沙盒 · 演练</title>
+<!--
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │ 方向A · 暗色双色侧栏开发者作品集 Dark Editorial（风格库网页 11 号）           │
+  │ 参考：Brittany Chiang v4（dev portfolio 事实标准）——海军底 / 板岩灰文字 /      │
+  │ 单一荧光薄荷 accent / 等宽编号标签 / 左固定侧栏 / 链接 hover 下划线滑入。      │
+  │ 本版不是作品集落地页，而是把该 DNA 翻译成 1440×900 的桌面应用布局。           │
+  ├─────────────────────────────────────────────────────────────────────────────┤
+  │ 结构自述（对照 design-spec 第六节 ①②③）                                     │
+  │ ① 导航形态：保留风格标志性的左固定侧栏，但把它「编号化」——01–08 等宽编号       │
+  │    对应八个模块，当前项「06 演练」用 accent 文字 + 左缘 2px 指示条做锚点高亮；  │
+  │    人物「林晚」与「演示模式（离线）」沉底，不占导航动线。                      │
+  │ ② 对话区与生境速览：不做左右等权双栏——对话流居中为「排练室主舞台」，            │
+  │    生境速览收进右侧可折窄轨（轨头带折叠把手），轨内按 L1–L4 地层顺序直排，      │
+  │    L2 生活结构整层虚线留白（她与父亲的关系未知），把「留白是允许的」做成         │
+  │    版面上真实存在的一格空层，而不是文案声明。                                  │
+  │ ③ 场景设定与预测单：场景设定是对话区上方的定式头部（含她可感知/仅复盘可见        │
+  │    的两行元信息分离）；预测单做成「对话区上方的横向阶段条」——P1–P3 三个假设     │
+  │    并排冻结在彩排开始之前可见的位置，主按钮「结束演练并生成预测单」内嵌阶段条     │
+  │    右端，动作与被冻结的对象在同一视觉容器里闭环。                              │
+  ├─────────────────────────────────────────────────────────────────────────────┤
+  │ 色彩论证：海军底 #0A192F 来自「夜晚独自使用的安静排练室」，板岩灰 #8892B0 是     │
+  │ 未被照亮的部分，单一薄荷青 #64FFDA 是排练室里那盏「在用」的灯——只落在系统       │
+  │ 标记上（模块编号 / 当前态 / 生境层级 / 预测编号 / 图标描边 / 主按钮），扁平     │
+  │ 无 glow、无渐变光晕；事实=实线徽章、推断=灰徽章、空白=虚线徽章，用线型而非       │
+  │ 色相区分认识层级，守住单 accent 纪律。与旧版「墨黑 + 琥珀橙」一眼可辨。        │
+  │ 字体：等宽 JetBrains Mono（Google Fonts 在线引用，断网回退 Cascadia/Consolas，  │
+  │ 不破版）；正文走系统中文字栈。                                                │
+  └─────────────────────────────────────────────────────────────────────────────┘
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#0A192F;      /* 底：深夜排练室 */
+    --navy-2:#0E2038;    /* 抬升一档：她的台词面板 */
+    --navy-3:#112240;    /* 面板：预测条 / 输入框 / 速览卡 */
+    --line:#233554;      /* 发丝线 */
+    --track:#1B2B4D;     /* 概率轨道底 */
+    --slate:#8892B0;     /* 板岩灰正文 */
+    --slate-2:#A8B2D1;   /* 板岩灰亮一档 */
+    --light:#CCD6F6;     /* 最亮文字 */
+    --mint:#64FFDA;      /* 唯一 accent：扁平，无 glow */
+    --mono:"JetBrains Mono","Cascadia Mono",ui-monospace,Consolas,"Microsoft YaHei",monospace;
+    --sans:-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--navy);
+    color:var(--slate);
+    font:400 14px/1.6 var(--sans);
+    display:grid;
+    grid-template-columns:232px minmax(0,1fr) 320px;
+    height:100vh;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  .i{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+  /* ============ ① 左固定侧栏：01–08 等宽编号导航 ============ */
+  .side{
+    border-right:1px solid var(--line);
+    padding:28px 24px 24px;
+    display:flex;flex-direction:column;
+  }
+  .brand{display:flex;align-items:center;gap:11px;margin-bottom:44px}
+  .brand-name{font-size:15px;font-weight:600;color:var(--light);letter-spacing:.06em;line-height:1.3}
+  .brand-sub{font:500 12px/1.4 var(--mono);letter-spacing:.14em;color:var(--slate);margin-top:2px}
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav a{
+    position:relative;display:flex;align-items:baseline;gap:12px;
+    padding:7px 10px;border-radius:4px;text-decoration:none;
+  }
+  .nav .no{font:500 12px/1 var(--mono);color:var(--mint);letter-spacing:.05em;width:20px;flex:none}
+  .nav .nm{position:relative;font-size:14px;color:var(--slate);transition:color .2s}
+  .nav .nm::after{
+    content:"";position:absolute;left:0;bottom:-2px;width:100%;height:1px;
+    background:var(--mint);transform:scaleX(0);transform-origin:right;transition:transform .25s ease;
+  }
+  .nav a:hover .nm{color:var(--slate-2)}
+  .nav a:hover .nm::after{transform:scaleX(1);transform-origin:left}
+  .nav a.cur{background:rgba(100,255,218,.06)}
+  .nav a.cur::before{content:"";position:absolute;left:-24px;top:6px;bottom:6px;width:2px;background:var(--mint)}
+  .nav a.cur .nm{color:var(--light)}
+  .side-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:16px}
+  .person .k{font:500 12px/1 var(--mono);letter-spacing:.16em;color:var(--slate);margin-bottom:7px}
+  .person .v{font-size:16px;font-weight:600;color:var(--light);letter-spacing:.04em}
+  .mode{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--slate)}
+  .mode .dot{width:7px;height:7px;border:1px solid var(--slate);border-radius:50%;flex:none}
+
+  /* ============ 主区：场景定式 → 预测阶段条 → 对话流 ============ */
+  .main{min-width:0;display:flex;flex-direction:column;padding:26px 30px 22px}
+  .sec-label{
+    display:inline-flex;align-items:center;gap:8px;
+    font:500 12px/1 var(--mono);letter-spacing:.2em;color:var(--mint);
+  }
+  .sec-label::before{content:"";width:14px;height:2px;background:var(--mint);flex:none}
+
+  /* 场景设定：对话区上方的定式头部 */
+  .scene{padding-bottom:18px;border-bottom:1px solid var(--line);margin-bottom:16px}
+  .scene-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .live{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--slate-2)}
+  .live .pulse{width:7px;height:7px;border-radius:50%;background:var(--mint);animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .scene h1{font-size:22px;font-weight:600;color:var(--light);letter-spacing:.02em;line-height:1.35;margin-bottom:12px}
+  .meta{display:flex;flex-direction:column;gap:7px}
+  .meta-row{display:flex;align-items:center;gap:9px;font-size:14px;color:var(--slate-2)}
+  .meta-row .i{width:15px;height:15px;color:var(--mint)}
+  .meta-row.dim{color:var(--slate)}
+  .meta-row.dim .i{color:var(--slate)}
+
+  /* ③ 预测单：对话区上方的横向阶段条 */
+  .forecast{
+    background:var(--navy-3);border:1px solid var(--line);border-radius:8px;
+    padding:14px 18px 16px;margin-bottom:16px;
+  }
+  .f-head{display:flex;align-items:baseline;gap:14px;margin-bottom:12px}
+  .f-note{font-size:12px;color:var(--slate);letter-spacing:.05em}
+  .f-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:22px;align-items:center}
+  .f-row{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px}
+  .f-no{font:700 12px/1 var(--mono);color:var(--mint);letter-spacing:.08em}
+  .f-p{font:700 18px/1 var(--mono);color:var(--light)}
+  .f-item p{font-size:14px;line-height:1.5;color:var(--slate-2);margin-bottom:8px;min-height:42px}
+  .track{height:3px;background:var(--track);border-radius:2px;overflow:hidden}
+  .track i{display:block;height:100%;background:var(--mint)}
+  .freeze{
+    align-self:center;white-space:nowrap;cursor:pointer;
+    font:600 14px/1 var(--sans);letter-spacing:.04em;
+    color:var(--mint);background:transparent;
+    border:1px solid var(--mint);border-radius:6px;padding:13px 18px;
+    transition:background .2s,color .2s;
+  }
+  .freeze:hover{background:var(--mint);color:var(--navy)}
+
+  /* ② 对话流：排练室主舞台（等宽说话人标签的字幕本式排布） */
+  .dialog{flex:1;min-height:0;display:flex;flex-direction:column}
+  .msgs{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:22px;padding:16px 2px 6px}
+  .t-head{
+    display:flex;align-items:center;gap:12px;
+    font:500 12px/1 var(--mono);letter-spacing:.22em;color:var(--slate);
+  }
+  .t-head::before,.t-head::after{content:"";height:1px;background:var(--line);flex:1}
+  .msg{display:grid;grid-template-columns:88px minmax(0,1fr);gap:0 14px;align-items:start}
+  .who{font:500 12px/1.5 var(--mono);letter-spacing:.1em;color:var(--slate);padding-top:14px}
+  .msg.twin .who{color:var(--mint)}
+  .who em{display:block;font:400 12px/1.5 var(--sans);font-style:normal;color:var(--slate);letter-spacing:.02em}
+  .msg p{font-size:15px;line-height:1.8;color:var(--slate-2);padding:12px 0}
+  .bubble{
+    background:var(--navy-2);border:1px solid var(--line);border-radius:6px;
+    padding:12px 16px;font-size:15px;line-height:1.8;color:var(--light);
+  }
+  .note{
+    grid-column:2;display:flex;align-items:center;gap:8px;
+    font-size:12px;color:var(--slate);margin-top:8px;
+  }
+  .note .chip{
+    font:500 12px/1 var(--mono);color:var(--slate-2);
+    border:1px solid var(--line);border-radius:3px;padding:2px 6px;flex:none;
+  }
+
+  .composer{display:flex;gap:10px;margin-top:14px}
+  .composer input{
+    flex:1;height:46px;background:var(--navy-3);border:1px solid var(--line);
+    border-radius:6px;padding:0 16px;font:400 15px/1 var(--sans);color:var(--light);outline:none;
+  }
+  .composer input::placeholder{color:var(--slate)}
+  .composer input:focus{border-color:var(--mint)}
+  .send{
+    width:46px;height:46px;flex:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    background:transparent;border:1px solid var(--mint);border-radius:6px;color:var(--mint);
+    transition:background .2s,color .2s;
+  }
+  .send:hover{background:var(--mint);color:var(--navy)}
+  .send .i{width:18px;height:18px}
+
+  /* ============ ② 右侧可折窄轨：生境速览 L1–L4 ============ */
+  .rail{border-left:1px solid var(--line);padding:26px 22px 22px;display:flex;flex-direction:column;gap:16px;min-height:0;overflow:auto}
+  .rail-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:2px}
+  .rail-title{font-size:15px;font-weight:600;color:var(--light);letter-spacing:.04em}
+  .rail-sub{font:500 12px/1 var(--mono);letter-spacing:.14em;color:var(--slate);margin-top:6px}
+  .collapse{
+    width:26px;height:26px;flex:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    background:transparent;border:1px solid var(--line);border-radius:4px;color:var(--slate);
+  }
+  .collapse:hover{color:var(--mint);border-color:var(--mint)}
+  .collapse .i{width:13px;height:13px}
+  .layer{
+    background:var(--navy-3);border:1px solid var(--line);border-radius:6px;
+    padding:14px 16px;
+  }
+  .l-head{display:flex;align-items:baseline;gap:9px;margin-bottom:8px}
+  .l-no{font:700 12px/1 var(--mono);color:var(--mint);letter-spacing:.06em}
+  .l-name{font-size:13px;color:var(--slate-2);letter-spacing:.06em}
+  .l-text{font-size:14px;line-height:1.7;color:var(--light);margin-bottom:10px}
+  .badge{
+    display:inline-flex;align-items:center;
+    font:500 12px/1 var(--mono);letter-spacing:.04em;
+    border-radius:3px;padding:4px 8px;
+  }
+  .badge.fact{color:var(--mint);border:1px solid rgba(100,255,218,.45)}
+  .badge.infer{color:var(--slate-2);border:1px solid var(--line)}
+  .layer.blank{background:transparent;border-style:dashed}
+  .layer.blank .l-text{color:var(--slate)}
+  .badge.blankb{color:var(--slate);border:1px dashed var(--slate)}
+  .rail-foot{
+    margin-top:auto;border-top:1px solid var(--line);padding-top:12px;
+    display:flex;align-items:center;gap:8px;font-size:12px;color:var(--slate);
+  }
+  .rail-foot .i{width:13px;height:13px}
+</style>
+</head>
+<body>
+
+  <!-- ① 左固定侧栏 -->
+  <aside class="side">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" class="i" style="color:var(--mint)" aria-hidden="true">
+        <path d="M12 2.7C12 2.7 5.5 10.2 5.5 14.7a6.5 6.5 0 0 0 13 0C18.5 10.2 12 2.7 12 2.7Z"/>
+      </svg>
+      <div>
+        <div class="brand-name">生境沙盒</div>
+        <div class="brand-sub">HABITAT SANDBOX</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="#"><span class="no">01</span><span class="nm">人物</span></a>
+      <a href="#"><span class="no">02</span><span class="nm">生境卡</span></a>
+      <a href="#"><span class="no">03</span><span class="nm">证据库</span></a>
+      <a href="#"><span class="no">04</span><span class="nm">导入</span></a>
+      <a href="#"><span class="no">05</span><span class="nm">24问访谈</span></a>
+      <a href="#" class="cur" aria-current="page"><span class="no">06</span><span class="nm">演练</span></a>
+      <a href="#"><span class="no">07</span><span class="nm">校准闭环</span></a>
+      <a href="#"><span class="no">08</span><span class="nm">设置</span></a>
+    </nav>
+    <div class="side-foot">
+      <div class="person">
+        <div class="k">当前人物</div>
+        <div class="v">林晚</div>
+      </div>
+      <div class="mode"><span class="dot"></span>演示模式（离线）</div>
+    </div>
+  </aside>
+
+  <!-- 主区：场景定式 → 预测阶段条 → 对话流 -->
+  <main class="main">
+
+    <!-- 场景设定：对话区上方的定式头部 -->
+    <header class="scene">
+      <div class="scene-top">
+        <span class="sec-label">场景设定</span>
+        <span class="live"><span class="pulse"></span>演练 · 进行中</span>
+      </div>
+      <h1>道歉 —— 为三个月前的那次争吵</h1>
+      <div class="meta">
+        <div class="meta-row">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/></svg>
+          <span>情境设定：她可感知</span>
+        </div>
+        <div class="meta-row dim">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.6"/><path d="M4 4l16 16"/></svg>
+          <span>演练目标：仅复盘可见，她不知道这是演练</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ③ 预测单：横向阶段条，主按钮内嵌右端 -->
+    <section class="forecast">
+      <div class="f-head">
+        <span class="sec-label">预测单</span>
+        <span class="f-note">演练结束前冻结预测</span>
+      </div>
+      <div class="f-grid">
+        <div class="f-item">
+          <div class="f-row"><span class="f-no">P1</span><span class="f-p">65%</span></div>
+          <p>她先追问动机而非接受道歉</p>
+          <div class="track"><i style="width:65%"></i></div>
+        </div>
+        <div class="f-item">
+          <div class="f-row"><span class="f-no">P2</span><span class="f-p">55%</span></div>
+          <p>她用反问确认我的真实来意</p>
+          <div class="track"><i style="width:55%"></i></div>
+        </div>
+        <div class="f-item">
+          <div class="f-row"><span class="f-no">P3</span><span class="f-p">80%</span></div>
+          <p>她不会当场和好，但会保留对话渠道</p>
+          <div class="track"><i style="width:80%"></i></div>
+        </div>
+        <button class="freeze" type="button">结束演练并生成预测单</button>
+      </div>
+    </section>
+
+    <!-- ② 对话流：字幕本式，等宽说话人标签 -->
+    <section class="dialog">
+      <span class="sec-label">对话流 · 数字孪生</span>
+      <div class="msgs">
+        <div class="t-head">演练开始</div>
+        <div class="msg me">
+          <span class="who">我</span>
+          <p>「那天是我不对，话说重了。这半年我一直在想这件事。」</p>
+        </div>
+        <div class="msg twin">
+          <span class="who">她<em>孪生 · 林晚</em></span>
+          <div class="bubble">「你现在来说这个，是因为快过年了吗？」</div>
+        </div>
+        <div class="msg me">
+          <span class="who">我</span>
+          <p>「有一部分。但主要是，我一直记得你当时没说完的那句话。」</p>
+        </div>
+        <div class="msg twin">
+          <span class="who">她<em>孪生 · 林晚</em></span>
+          <div class="bubble">「嗯。」</div>
+          <div class="note">她可以沉默、追问、拒绝——卡内标注<span class="chip">[推断]</span></div>
+        </div>
+      </div>
+      <div class="composer">
+        <input type="text" placeholder="说点什么……">
+        <button class="send" type="button" aria-label="发送">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <!-- ② 右侧可折窄轨：生境速览，L1–L4 地层直排 -->
+  <aside class="rail">
+    <div class="rail-head">
+      <div>
+        <div class="rail-title">她的生境速览</div>
+        <div class="rail-sub">生境卡 · 四层</div>
+      </div>
+      <button class="collapse" type="button" aria-label="收起生境速览">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+    <div class="layer">
+      <div class="l-head"><span class="l-no">L1</span><span class="l-name">基础信息</span></div>
+      <p class="l-text">林晚 · 26 · 出版业编辑</p>
+      <span class="badge fact">事实 · 引用证据 ×12</span>
+    </div>
+
+    <div class="layer blank">
+      <div class="l-head"><span class="l-no">L2</span><span class="l-name">生活结构</span></div>
+      <p class="l-text">空白：她与父亲的关系 —— 未知</p>
+      <span class="badge blankb">空白 · 留白是允许的</span>
+    </div>
+
+    <div class="layer">
+      <div class="l-head"><span class="l-no">L3</span><span class="l-name">人物性情</span></div>
+      <p class="l-text">面对道歉往往先确认动机，而非先接住情绪</p>
+      <span class="badge infer">推断 · 置信度 0.62</span>
+    </div>
+
+    <div class="layer">
+      <div class="l-head"><span class="l-no">L4</span><span class="l-name">场景表达</span></div>
+      <p class="l-text">短句、常省略主语；「嗯」未必是同意</p>
+      <span class="badge infer">推断 · 置信度 0.55</span>
+    </div>
+
+    <div class="rail-foot">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-3 7.7-7 9-4-1.3-7-4.4-7-9V6l7-3Z"/></svg>
+      卡片是倾向，不是台词库。
+    </div>
+  </aside>
+
+</body>
+</html>

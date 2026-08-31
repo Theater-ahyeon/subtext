@@ -11,9 +11,9 @@
 
 | 平台 | 文件 | 构建位置 |
 |---|---|---|
-| Windows | `Habitat Sandbox Setup 1.0.0.exe` / `Habitat Sandbox-1.0.0-win.zip` | 本机 |
-| macOS (Intel + Apple Silicon) | `Habitat Sandbox-1.0.0.dmg` | GitHub Actions |
-| Linux | `Habitat Sandbox-1.0.0.AppImage` / `*.deb` | GitHub Actions |
+| Windows | `Rehearsal Setup 1.0.0.exe` / `Rehearsal-1.0.0-win.zip` | 本机 |
+| macOS (Intel + Apple Silicon) | `Rehearsal-1.0.0.dmg` | GitHub Actions |
+| Linux | `Rehearsal-1.0.0.AppImage` / `*.deb` | GitHub Actions |
 
 ## 上传
 
@@ -32,6 +32,6 @@
 ## 验收清单（醒来后可核对）
 
 - [ ] `npm test` → 24 通过
-- [ ] `npm start` → 演示模式全流程：建档案 → 导入样例 → 归纳 → 演练 → 冻结预测 → 回流归因 → 撤销
+- [ ] `npm start` → 演示模式全流程：建档案 → 导入样例 → 归纳 → 彩排 → 冻结预测 → 对照差异分析 → 撤销
 - [ ] 设置页切换 OpenAI 兼容接口 → 测试连接
 - [ ] Releases 页有 Windows/macOS/Linux 安装包
