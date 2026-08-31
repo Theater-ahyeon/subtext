@@ -13,6 +13,18 @@
       'model-bias': '扮演偏差',
     },
 
+    PROFILE_SLOTS: [
+      { key: 'gender', label: '性别', type: 'single' },
+      { key: 'birthday', label: '生日 / 年龄', type: 'single' },
+      { key: 'occupation', label: '职业', type: 'single' },
+      { key: 'location', label: '所在地', type: 'single' },
+      { key: 'family', label: '家庭', type: 'multi' },
+      { key: 'hobbies', label: '爱好', type: 'multi' },
+      { key: 'foods', label: '喜爱的食物', type: 'multi' },
+      { key: 'likes', label: '喜欢', type: 'multi' },
+      { key: 'dislikes', label: '讨厌 / 雷区', type: 'multi' },
+    ],
+
     NAV: [
       { id: 'home', label: '关系', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/></svg>' },
       { id: 'card', label: '理解卡', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>' },
@@ -21,6 +33,7 @@
       { id: 'interview', label: '24 问', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.8.35-1.4.9-1.4 1.7v.5"/><circle cx="11.5" cy="17" r=".6" fill="currentColor"/></svg>' },
       { id: 'rehearsal', label: '彩排', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 1 1-3.2-6.4L21 5l-.6 3.4A8 8 0 0 1 21 12Z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01"/></svg>' },
       { id: 'calibration', label: '对照复盘', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 3v4h-4"/></svg>' },
+      { id: 'analysis', label: '深度分析', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6M11 8v6"/></svg>' },
       { id: 'settings', label: '设置', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></svg>' },
     ],
 

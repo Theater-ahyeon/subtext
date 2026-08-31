@@ -309,6 +309,38 @@ const MOCK_REPLY = {
     ],
   }),
   INTERVIEW_PROBE: '这个说法具体会表现成什么行为？例如她最近一次让你产生这种感觉，是发生了什么？',
+  ANALYZE_PERSON: [
+    '## 一、TA 是谁 —— 整合画像',
+    '- 理解卡显示：面对不确定的请求往往先确认目的再决定投入程度（推断，把握中等）。',
+    '- 生活结构层记录了近期有时间压力来源，但对信任的人会主动腾出精力。',
+    '## 二、证据与理解的质量',
+    '- 证据规模尚小，以上结论以推断为主；作息与压力来源仍是空白。',
+    '## 三、沟通与情绪模式',
+    '- 回复偏短、问题驱动，很少先寒暄；压力期会进一步收缩表达。',
+    '## 四、模拟 vs 现实',
+    '- 暂无足够的对照数据；开始写下预判并在现实对照后，本节会给出命中率与偏差解读。',
+    '## 五、认知盲区',
+    '- ① 作息与压力来源；② 她对哪些话题明显更有兴趣；③ 家庭与亲密关系的边界。',
+    '## 六、给用户的建议',
+    '- 下次聊天自然带出作息话题；观察她对计划变动的第一反应；不要连续追问两件事。',
+  ].join('\n'),
+  ANALYZE_SCENARIO: [
+    '## 一、TA 在这个场景的反应路径',
+    '- 高可能：先确认你的目的，再决定投入程度（理解卡·性情层）。',
+    '- 中可能：以短句维持礼貌回应，不主动延续话题（理解卡·表达层）。',
+    '- 低可能：直接敞开谈近期压力（仅有现实对照中一次主动延展的孤例）。',
+    '## 二、相关往事',
+    '- 事件记忆中有同场景的历史演练记录，开场时她会带着上一次的结论而来。',
+    '## 三、历史彩排与现实对照',
+    '- 暂无现实对照数据；彩排里的表现仅供参考。',
+    '## 四、你的最优策略',
+    '- 开场直接说明来意，给她确定感；一次只问一件事；接受"嗯"不是同意，留出追问空间。',
+    '## 五、风险与提醒',
+    '- 避免连续试探；避免在她说"忙"的时候继续推进话题。',
+  ].join('\n'),
+  PROFILE: JSON.stringify({
+    profile: { gender: '', birthday: '', occupation: '编辑', location: '', family: [], hobbies: [], foods: [], likes: ['守约的人'], dislikes: ['临时打乱安排'] },
+  }),
   INTERVIEW_SUMMARY: '## 中途小结（演示模式）\n- 已确定：她重视约定\n- 待确认：核心信念层尚未触及',
   INTERVIEW_FINAL: JSON.stringify({
     final: '# 创作思路整合（演示模式）\n## 一、用户已经确定的内容\n- 她重视约定与责任\n## 十、高可能推论\n- 她可能对"被临时打乱安排"敏感',
@@ -334,6 +366,9 @@ function mockRespond(messages, opts = {}) {
     const answer = m ? m[1] : '';
     return answer.length > 10 ? 'OK' : MOCK_REPLY.INTERVIEW_PROBE;
   }
+  if (task === 'ANALYZE_PERSON') return MOCK_REPLY.ANALYZE_PERSON;
+  if (task === 'ANALYZE_SCENARIO') return MOCK_REPLY.ANALYZE_SCENARIO;
+  if (task === 'PROFILE') return MOCK_REPLY.PROFILE;
   if (task === 'INTERVIEW_SUMMARY') return MOCK_REPLY.INTERVIEW_SUMMARY;
   if (task === 'INTERVIEW_FINAL') return MOCK_REPLY.INTERVIEW_FINAL;
   return MOCK_REPLY.TWIN;

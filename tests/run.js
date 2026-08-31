@@ -614,6 +614,49 @@ async function main() {
     store6.deletePerson(b6.id);
   });
 
+
+  // ================= 人物档案槽位 / 深度分析 =================
+  console.log('== 档案与分析 ==');
+  await test('档案槽位：AI 提取不覆盖用户手填，非法键被丢弃', () => {
+    const store7 = new Store();
+    store7.init(fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-prof-')));
+    const b7 = store7.createPerson('档案测试', '');
+    pipeline.applyProfile(b7, { occupation: { value: '编辑（用户填）', source: 'user' } }, 'user');
+    pipeline.applyProfile(b7, { occupation: { value: '编辑（AI 提取）', source: 'ai' }, gender: { value: '女', source: 'ai' } }, 'ai');
+    assert.ok(b7.profile.slots.occupation.value.includes('用户填'), '用户手填不应被 AI 覆盖');
+    assert.strictEqual(b7.profile.slots.gender.value, '女');
+    assert.strictEqual(b7.profile.slots.evil, undefined, '未知键不应入库');
+    // AI 提取多值槽位
+    pipeline.applyProfile(b7, { foods: [{ text: '杨枝甘露' }], hobbies: [{ text: '攀岩' }, { text: ' ' }] }, 'ai');
+    assert.deepStrictEqual(b7.profile.slots.foods.map(x => x.text), ['杨枝甘露']);
+    assert.deepStrictEqual(b7.profile.slots.hobbies.map(x => x.text), ['攀岩'], '空白项应过滤');
+    store7.deletePerson(b7.id);
+  });
+  await test('档案提取（mock）：从理解卡提取有依据的项', async () => {
+    const store8 = new Store();
+    store8.init(fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-prof2-')));
+    const b8 = store8.createPerson('提取测试', '');
+    store8.addClaim(b8, { layer: 'basic', text: '她是出版业编辑', epistemic: 'fact', source: 'evidence', confidence: 0.9 });
+    const prof = await pipeline.profileExtract(store8, b8, SETTINGS);
+    assert.strictEqual(prof.slots.occupation.value, '编辑');
+    assert.strictEqual(prof.slots.occupation.source, 'ai');
+    store8.deletePerson(b8.id);
+  });
+  await test('深度分析（mock）：人物全息报告与场景推演', async () => {
+    const store9 = new Store();
+    store9.init(fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-ana-')));
+    const b9 = store9.createPerson('分析测试', '');
+    const person = await pipeline.analyzePerson(store9, b9, SETTINGS);
+    assert.ok(person.report.includes('## 一、'), '人物报告应为固定结构 Markdown');
+    const scn = await pipeline.analyzeScenario(store9, b9, SETTINGS, '周末约她出来');
+    assert.ok(scn.report.includes('## 一、'), '场景推演应为固定结构 Markdown');
+    assert.ok(Array.isArray(scn.recalled));
+    let threw = false;
+    try { await pipeline.analyzeScenario(store9, b9, SETTINGS, '   '); } catch { threw = true; }
+    assert.ok(threw, '空场景应报错');
+    store9.deletePerson(b9.id);
+  });
+
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`\n结果：${passed} 通过，${failed} 失败`);
   if (failed) { for (const f of failures) console.log('FAIL', f.name, f.err.stack); process.exit(1); }

@@ -114,6 +114,14 @@
       attributions: (p) => invoke('attribution:list', p),
       undo: (p) => invoke('attribution:undo', p),
     },
+    profile: {
+      set: (p) => invoke('profile:set', p),
+      extract: (p) => invoke('profile:extract', p),
+    },
+    analysis: {
+      person: (p) => invoke('analysis:person', p),
+      scenario: (p) => invoke('analysis:scenario', p),
+    },
     memory: {
       list: (p) => invoke('memory:list', p),
       del: (p) => invoke('memory:delete', p),

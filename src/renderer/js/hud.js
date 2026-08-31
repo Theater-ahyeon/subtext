@@ -2,7 +2,7 @@
 /* 彩排 · 人物状态栏（HUD）：游戏风格快捷总览，数据全部来自本机档案 */
 (() => {
   const HB = window.HB;
-  const { esc, modal, guard } = HB.ui;
+  const { esc, modal, guard, toast, closeModal } = HB.ui;
   const H = HB.H;
 
   const pct = (v) => (v == null ? '—' : Math.round(v * 100) + '%');
@@ -25,6 +25,57 @@
         <span class="hud-track"><i class="hud-fill ${cls || ''}" style="width:${Math.round(p * 100)}%"></i></span>
         <span class="val">${text}</span>
       </div>`;
+  }
+
+  const P_SLOTS = HB.C.PROFILE_SLOTS;
+
+  function slotVals(prof, key) {
+    const s = prof && prof.slots && prof.slots[key];
+    if (!s) return [];
+    return Array.isArray(s) ? s.map(x => x.text) : [s.value];
+  }
+
+  function profileHtml(b) {
+    const prof = b.profile || { slots: {} };
+    const srcBadge = (source) => source === 'user' ? '' : (source === 'ai' ? ' <span class="hud-t">AI</span>' : '');
+    const singles = P_SLOTS.filter(d => d.type === 'single').map(d => {
+      const vals = slotVals(prof, d.key);
+      const s = prof.slots && prof.slots[d.key];
+      return `<div class="hud-pslot"><span class="lbl">${d.label}</span><span class="val ${vals.length ? '' : 'is-empty'}">${esc(vals[0] || '—')}${vals.length ? srcBadge(s && s.source) : ''}</span></div>`;
+    }).join('');
+    const multis = P_SLOTS.filter(d => d.type === 'multi').map(d => {
+      const vals = slotVals(prof, d.key);
+      return `<div class="hud-prow"><span class="lbl">${d.label}</span><span class="chips">${vals.length ? vals.map(v => `<span class="badge plain">${esc(v)}</span>`).join('') : '<span class="muted small">—</span>'}</span></div>`;
+    }).join('');
+    return `<div class="hud-pgrid">${singles}</div>${multis}`;
+  }
+
+  /** 档案编辑器：单值输入框 + 多值逗号分隔 */
+  function profileEditor(id, b) {
+    const prof = b.profile || { slots: {} };
+    const fields = P_SLOTS.map(d => {
+      const vals = slotVals(prof, d.key);
+      if (d.type === 'single') {
+        return `<label class="field"><span>${d.label}</span><input type="text" data-pslot="${d.key}" value="${esc(vals[0] || '')}" maxlength="40"></label>`;
+      }
+      return `<label class="field"><span>${d.label}（多个用逗号分隔）</span><input type="text" data-pslot="${d.key}" value="${esc(vals.join('，'))}" maxlength="200"></label>`;
+    }).join('');
+    modal(`<h3>编辑档案</h3>
+      <p class="muted small">你手填的内容不会被「从理解卡提取」覆盖。证据原文永远是事实的第一来源。</p>
+      ${fields}
+      <div class="modal-ops"><button class="btn ghost" id="peCancel">取消</button><button class="btn primary" id="peSave">保存</button></div>`);
+    document.getElementById('peCancel').onclick = closeModal;
+    document.getElementById('peSave').onclick = async () => {
+      const slots = {};
+      document.querySelectorAll('[data-pslot]').forEach(inp => {
+        const def = P_SLOTS.find(d => d.key === inp.dataset.pslot);
+        const raw = inp.value.trim();
+        if (def.type === 'single') slots[def.key] = { value: raw };
+        else slots[def.key] = raw ? raw.split(/[,，、\n]+/).map(t => ({ text: t.trim() })).filter(x => x.text) : [];
+      });
+      const r = await guard(() => H.profile.set({ id, slots }), '保存中…');
+      if (r) { closeModal(); toast('档案已保存', 'ok'); open(id); }
+    };
   }
 
   async function open(id) {
@@ -65,6 +116,15 @@
           <div class="hud-name">${esc(b.name)} <span class="hud-tier">${tier.name} · Lv${tier.lv}</span></div>
           <div class="hud-alias">${esc(b.alias || '暂无备注')} · 建档 ${esc((b.createdAt || '').slice(0, 10))}</div>
         </div>
+      </div>
+
+      <div class="hud-profile">
+        <div class="hud-profile-head">
+          <span class="hud-k">档案</span>
+          <button class="btn sm ghost" id="hudProfExtract">从理解卡提取</button>
+          <button class="btn sm ghost" id="hudProfEdit">编辑</button>
+        </div>
+        ${profileHtml(b)}
       </div>
 
       <div class="hud-bars">
@@ -113,6 +173,15 @@
       <div class="note mt14">状态栏只汇总本机档案数据 —— 它是理解辅助，不是评判表。空白多，说明还有很多值得了解的地方。</div>
       <div class="modal-ops"><button class="btn ghost" id="hudClose">关闭</button><button class="btn primary" id="hudGo">打开理解卡</button></div>
     `);
+    const ex = document.getElementById('hudProfExtract');
+    if (ex) ex.onclick = async () => {
+      ex.disabled = true;
+      const r = await guard(() => H.profile.extract({ id }), '提取档案…');
+      if (r) { toast('档案已从理解卡更新（仅填有依据的项，不覆盖你手填的内容）', 'ok'); open(id); }
+      else ex.disabled = false;
+    };
+    const ed = document.getElementById('hudProfEdit');
+    if (ed) ed.onclick = () => profileEditor(id, b);
     const close = document.getElementById('hudClose');
     if (close) close.onclick = () => HB.ui.closeModal();
     const go = document.getElementById('hudGo');

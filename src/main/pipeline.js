@@ -507,9 +507,121 @@ function interviewWriteClaims(store, bundle, indexes) {
   return written;
 }
 
+/** 档案槽位：确保结构存在；校验键合法性 */
+function ensureProfile(bundle) {
+  if (!bundle.profile || typeof bundle.profile !== 'object') bundle.profile = { updatedAt: null, slots: {} };
+  if (!bundle.profile.slots) bundle.profile.slots = {};
+  return bundle.profile;
+}
+
+function profileFromParsed(parsed, source) {
+  const P = require('./prompts');
+  const slots = {};
+  for (const def of P.PROFILE_SLOTS) {
+    const v = parsed ? parsed[def.key] : null;
+    if (def.type === 'single') {
+      const text = clampText(v, 40);
+      if (text) slots[def.key] = { value: text, source };
+    } else if (Array.isArray(v)) {
+      const arr = v.map(x => ({ text: clampText(typeof x === 'string' ? x : x && x.text, 40).trim(), source }))
+        .filter(x => x.text).slice(0, 10);
+      if (arr.length) slots[def.key] = arr;
+    }
+  }
+  return slots;
+}
+
+/** 应用档案：只覆盖与 incoming 同来源的槽位，用户手填（source==='user'）永不被 AI 覆盖 */
+function applyProfile(bundle, incoming, source) {
+  const prof = ensureProfile(bundle);
+  const P = require('./prompts');
+  for (const def of P.PROFILE_SLOTS) {
+    const val = incoming ? incoming[def.key] : null;
+    if (val == null) continue;
+    const cur = prof.slots[def.key];
+    if (cur && cur.source === 'user' && source === 'ai') continue;
+    if (def.type === 'single') {
+      const text = clampText(val && val.value != null ? val.value : val, 40).trim();
+      if (text) prof.slots[def.key] = { value: text, source };
+    } else if (Array.isArray(val)) {
+      const arr = val.map(x => ({ text: clampText(x && x.text != null ? x.text : x, 40).trim(), source }))
+        .filter(x => x.text).slice(0, 10);
+      if (arr.length) prof.slots[def.key] = arr;
+    }
+  }
+  prof.updatedAt = new Date().toISOString();
+  return prof;
+}
+
+async function profileExtract(store, bundle, settings) {
+  const raw = await chat(settings, [{ role: 'user', content: P.profileExtractPrompt(bundle) }], { task: 'PROFILE', temperature: settings.analysisTemperature });
+  const parsed = extractJson(raw);
+  const slots = profileFromParsed(parsed.profile || parsed, 'ai');
+  applyProfile(bundle, slots, 'ai');
+  store.savePerson(bundle);
+  return bundle.profile;
+}
+
+/** 本地统计摘要（给分析提示词；全部来自本机数据） */
+function personDigest(bundle, store) {
+  const stats = store.computeStats(bundle);
+  const verdicts = {};
+  for (const a of bundle.attributions) if (!a.undone) verdicts[a.verdict] = (verdicts[a.verdict] || 0) + 1;
+  const months = {};
+  for (const e of bundle.evidence) {
+    const ym = (e.ts || e.createdAt || '').slice(0, 7);
+    if (ym) months[ym] = (months[ym] || 0) + 1;
+  }
+  const mem = bundle.memories && bundle.memories.items || [];
+  const doneQ = Object.keys(bundle.interview.records || {}).length;
+  return {
+    stats,
+    verdicts,
+    evidenceMonths: months,
+    memoriesTotal: mem.length,
+    memoriesLatest: mem.slice(-6).map(i => ({ kind: i.kind, text: i.text })),
+    sessions: bundle.sessions.slice(-8).map(s => ({ scenario: (s.scenario || '').slice(0, 60), turns: s.messages.filter(m => m.role === 'user').length, status: s.status })),
+    interview: { doneQ, hasFinal: !!bundle.interview.final },
+    dynamics: bundle.dynamic.filter(d => !d.resolved).slice(-4).map(d => d.text),
+  };
+}
+
+/** 人物全息分析：完整分析报告（Markdown） */
+async function analyzePerson(store, bundle, settings) {
+  const digest = personDigest(bundle, store);
+  const report = await chat(settings, [
+    { role: 'user', content: P.personAnalysisPrompt(bundle, JSON.stringify(digest)) },
+  ], { task: 'ANALYZE_PERSON', temperature: settings.analysisTemperature });
+  return { report };
+}
+
+/** 场景推演分析：相关往事 + 同类彩排 + 反应路径 + 策略 */
+async function analyzeScenario(store, bundle, settings, scenario) {
+  const text = clampText(scenario, 2000);
+  if (!text.trim()) throw new Error('请先填写要分析的场景');
+  const recalled = await memory.recall(bundle, settings, text, { k: 6 }).catch(() => ({ items: [] }));
+  const related = bundle.sessions
+    .filter(s => similar(s.scenario || '', text) || (s.scenario || '').includes(text.slice(0, 8)))
+    .slice(-3)
+    .map(s => ({ scenario: (s.scenario || '').slice(0, 60), turns: s.messages.filter(m => m.role === 'user').length, status: s.status }));
+  const verdicts = {};
+  for (const a of bundle.attributions) if (!a.undone) verdicts[a.verdict] = (verdicts[a.verdict] || 0) + 1;
+  const stats = store.computeStats(bundle);
+  const digest = {
+    recalled: recalled.items, recallFallback: recalled.fallback,
+    relatedSessions: related, verdicts,
+    hitRateTop1: stats.hitRateTop1, brierTop1: stats.brierTop1, brierSamples: stats.brierSamples,
+  };
+  const report = await chat(settings, [
+    { role: 'user', content: P.scenarioAnalysisPrompt(bundle, text, JSON.stringify(digest)) },
+  ], { task: 'ANALYZE_SCENARIO', temperature: settings.analysisTemperature });
+  return { report, recalled: recalled.items };
+}
+
 module.exports = {
   inductEvidence, startSession, twinTurn, endSession, sessionTranscript,
   freezePrediction, submitFeedback, applyUpdates, undoAttribution, topicRadar,
   interviewAnswer, interviewProbeAnswer, interviewSummary, interviewFinalize, interviewWriteClaims,
   chunkEvidence, evidenceLine, similar, clamp01, inductionMessages, MAX_IMAGES_PER_CHUNK,
+  ensureProfile, applyProfile, profileExtract, personDigest, analyzePerson, analyzeScenario,
 };

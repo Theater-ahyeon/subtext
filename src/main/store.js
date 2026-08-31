@@ -237,6 +237,7 @@ class Store {
       feedbacks: [],     // {id, predictionId, sessionId, raw, createdAt}
       attributions: [],  // {id, feedbackId, predictionId, verdict, analysis, updates, createdAt}
       interview: { started: false, currentQ: 1, records: {}, summaries: [], final: null, suggestions: [], updatedAt: null },
+      profile: { updatedAt: null, slots: {} },
     };
     atomicWrite(this.personFile(id), JSON.stringify(bundle, null, 2));
     const index = this.listPersons();

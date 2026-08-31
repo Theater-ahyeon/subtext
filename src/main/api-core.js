@@ -238,6 +238,34 @@ function createCore({ dataDir, version, platform, secure }) {
     'stats:get': ({ id }) => withPerson(id, b => store.computeStats(b)),
     'radar:get': ({ id }) => withPerson(id, b => pipeline.topicRadar(b)),
 
+    // ---------- 人物档案槽位 ----------
+    'profile:set': ({ id, slots }) => withPerson(id, b => {
+      const P = require('./prompts');
+      const prof = pipeline.ensureProfile(b);
+      const keys = new Set(P.PROFILE_KEYS);
+      for (const [key, val] of Object.entries(slots || {})) {
+        if (!keys.has(key)) continue;
+        const def = P.PROFILE_SLOTS.find(d => d.key === key);
+        if (def.type === 'single') {
+          const text = String(val && val.value || '').slice(0, 40);
+          if (text) prof.slots[key] = { value: text, source: 'user' };
+          else delete prof.slots[key];
+        } else if (Array.isArray(val)) {
+          const arr = val.map(x => ({ text: String(x && x.text || x || '').slice(0, 40), source: 'user' })).filter(x => x.text).slice(0, 10);
+          if (arr.length) prof.slots[key] = arr;
+          else delete prof.slots[key];
+        }
+      }
+      prof.updatedAt = new Date().toISOString();
+      store.savePerson(b);
+      return b.profile;
+    }),
+    'profile:extract': ({ id }) => withPerson(id, async b => ({ profile: await pipeline.profileExtract(store, b, effectiveSettings()) })),
+
+    // ---------- 深度分析 ----------
+    'analysis:person': ({ id }) => withPerson(id, async b => pipeline.analyzePerson(store, b, effectiveSettings())),
+    'analysis:scenario': ({ id, scenario }) => withPerson(id, async b => pipeline.analyzeScenario(store, b, effectiveSettings(), scenario)),
+
     // ---------- interview ----------
     'interview:state': ({ id }) => withPerson(id, b => ({
       started: b.interview.started, currentQ: b.interview.currentQ, records: b.interview.records,
