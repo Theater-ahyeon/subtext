@@ -629,10 +629,37 @@ async function analysisFollowUp(store, bundle, settings, { digest, history, ques
   return { answer };
 }
 
+/** 突发消息解读：未知因素假说分析（结构化输出，供渲染层转为待验证项） */
+async function analyzeUnseen(store, bundle, settings, { message, context }) {
+  const text = clampText(message, 4000);
+  if (!text.trim()) throw new Error('请粘贴收到的消息原文');
+  const ctx = clampText(context, 1000);
+  const recalled = await memory.recall(bundle, settings, text, { k: 5 }).catch(() => ({ items: [] }));
+  const digest = personDigest(bundle, store);
+  const raw = await chat(settings, [
+    { role: 'user', content: P.unseenMessagePrompt(bundle, text, ctx, JSON.stringify(recalled.items), JSON.stringify(digest)) },
+  ], { task: 'UNSEEN', temperature: settings.analysisTemperature });
+  const parsed = extractJson(raw);
+  const hypotheses = (Array.isArray(parsed.hypotheses) ? parsed.hypotheses : []).slice(0, 4).map(h => ({
+    text: clampText(h && h.text, 200),
+    likelihood: ['high', 'mid', 'low'].includes(h && h.likelihood) ? h.likelihood : 'mid',
+    signals: clampText(h && h.signals, 300),
+    domain: ['工作', '家庭', '健康', '情绪', '社交', '关系', '其他'].includes(h && h.domain) ? h.domain : '其他',
+    verify: clampText(h && h.verify, 300),
+  })).filter(h => h.text);
+  return {
+    literal: clampText(parsed.literal, 2000),
+    known: clampText(parsed.known, 2000),
+    hypotheses,
+    response: clampText(parsed.response, 2000),
+    caveat: clampText(parsed.caveat, 800),
+  };
+}
+
 module.exports = {
   inductEvidence, startSession, twinTurn, endSession, sessionTranscript,
   freezePrediction, submitFeedback, applyUpdates, undoAttribution, topicRadar,
   interviewAnswer, interviewProbeAnswer, interviewSummary, interviewFinalize, interviewWriteClaims,
   chunkEvidence, evidenceLine, similar, clamp01, inductionMessages, MAX_IMAGES_PER_CHUNK,
-  ensureProfile, applyProfile, profileExtract, personDigest, analyzePerson, analyzeScenario, analysisFollowUp,
+  ensureProfile, applyProfile, profileExtract, personDigest, analyzePerson, analyzeScenario, analysisFollowUp, analyzeUnseen,
 };

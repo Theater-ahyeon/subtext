@@ -338,6 +338,17 @@ const MOCK_REPLY = {
     '## 五、风险与提醒',
     '- 避免连续试探；避免在她说"忙"的时候继续推进话题。',
   ].join('\n'),
+  UNSEEN: JSON.stringify({
+    literal: '字面上是一条问候加一个试探性的邀约——内容本身很轻，但时机（长时间未联系后突然发来）是解读的关键。',
+    known: '理解卡的性情层显示：面对不确定的请求往往先确认目的再决定投入程度——这条消息本身可能就是她在"确认目的"。现有动态状态不足以解释这次主动联系。',
+    hypotheses: [
+      { text: '她生活中出现了需要找人聊天的契机（如工作告一段落、假期临近），打破了此前的收缩状态', likelihood: 'high', signals: '消息语气比最近轻快，且主动延续话题', domain: '工作', verify: '顺着问她最近是不是忙完了，观察回应的松弛度' },
+      { text: '她遇到了想找人商量的事，先用轻话题铺垫', likelihood: 'mid', signals: '试探性邀约而非直接说事', domain: '情绪', verify: '接受邀约后留出空间，不追问，看她是否主动展开' },
+      { text: '单纯的季节性/节日性问候，无特殊含义', likelihood: 'low', signals: '内容本身无信息量', domain: '其他', verify: '正常回应即可，不需要过度解读' },
+    ],
+    response: '1. 正常、不夸张地回应问候（匹配她的句长）；2. 邀约可以答应，别趁机追问"为什么突然找我"——那会让下一次突然联系变少；3. 见面后把话题留给她，她想说的自然会说。',
+    caveat: '以上全部是行为推测而非事实。假说的意义是帮你准备好接住她，而不是预审判她。如果消息涉及健康或情绪低谷的迹象，最好的"分析"是直接表达关心。',
+  }),
   PROFILE: JSON.stringify({
     profile: { gender: '', birthday: '', occupation: '编辑', location: '', family: [], hobbies: [], foods: [], likes: ['守约的人'], dislikes: ['临时打乱安排'] },
   }),
@@ -368,6 +379,7 @@ function mockRespond(messages, opts = {}) {
   }
   if (task === 'ANALYZE_PERSON') return MOCK_REPLY.ANALYZE_PERSON;
   if (task === 'ANALYZE_SCENARIO') return MOCK_REPLY.ANALYZE_SCENARIO;
+  if (task === 'UNSEEN') return MOCK_REPLY.UNSEEN;
   if (task === 'PROFILE') return MOCK_REPLY.PROFILE;
   if (task === 'INTERVIEW_SUMMARY') return MOCK_REPLY.INTERVIEW_SUMMARY;
   if (task === 'INTERVIEW_FINAL') return MOCK_REPLY.INTERVIEW_FINAL;

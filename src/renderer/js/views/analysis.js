@@ -217,6 +217,80 @@
     };
   }
 
+  const DOMAIN_LAYER = { '工作': 'life', '家庭': 'life', '健康': 'life', '社交': 'life', '情绪': 'temperament', '关系': 'temperament', '其他': 'life' };
+  const LIKE_MAP = { high: '高', mid: '中', low: '低' };
+
+  function unseenBody(b) {
+    return `
+      <div class="panel hairline-top" data-glow>
+        <div class="panel-title">收到的消息</div>
+        <label class="field"><span>消息原文（粘贴 TA 突然发来的消息，多条按顺序粘贴）</span>
+          <textarea id="unseenMsg" style="min-height:88px" placeholder="把 TA 的原话原样粘贴到这里，不要改写"></textarea></label>
+        <label class="field"><span>背景补充（可选：多久没联系、之前发生了什么、你注意到的反常之处）</span>
+          <textarea id="unseenCtx" style="min-height:64px" placeholder="例如：我们已经两周没说话了，之前她回复一直很短"></textarea></label>
+        <div class="note">TA 在自己的生活里活动，很多事你并不知道。分析会先用理解卡与已知事件解释；解释不通的部分，会给出「未知因素假说」——每条都带支持线索与自然求证方式。假说不是事实。</div>
+        <div class="mt14"><button class="btn primary btn-beam" id="unseenGo">解读这条消息</button></div>
+      </div>
+      <div id="unseenReport"></div>`;
+  }
+
+  function renderUnseen(b, r) {
+    const hypHtml = (r.hypotheses || []).length ? (r.hypotheses || []).map((h, i) => `
+      <div class="hypo-card">
+        <div class="hypo-head">
+          <span class="badge ${h.likelihood === 'high' ? 'fact' : h.likelihood === 'mid' ? 'inference' : 'blank'}">${LIKE_MAP[h.likelihood] || '中'}可能</span>
+          <span class="badge plain">${esc(h.domain)}</span>
+          <div class="hypo-text">${esc(h.text)}</div>
+        </div>
+        ${h.signals ? `<div class="hypo-meta"><b>支持线索：</b>${esc(h.signals)}</div>` : ''}
+        ${h.verify ? `<div class="hypo-meta"><b>自然求证：</b>${esc(h.verify)}</div>` : ''}
+        <div class="flex mt8">
+          <button class="btn sm ghost" data-hblank="${i}">转为想多了解的</button>
+          <button class="btn sm ghost" data-hdyn="${i}">记为动态状态</button>
+        </div>
+      </div>`).join('') : '<div class="muted small">本次没有给出未知因素假说 —— 已知因素足以解释，或材料不足。没有假说是好事。</div>';
+    $('#unseenReport').innerHTML = `
+      <div class="panel hairline-top" data-glow>
+        <div class="panel-title">字面解读</div>
+        ${md(r.literal || '（无）')}
+        <div class="panel-title mt14">已知因素的解释</div>
+        ${md(r.known || '（无）')}
+        <div class="panel-title mt14">未知因素假说</div>
+        <div class="panel-sub">假说 ≠ 事实。每条都给出了自然求证的方式——求证优先于推断。</div>
+        ${hypHtml}
+        <div class="panel-title mt14">建议的回应方式</div>
+        ${md(r.response || '（无）')}
+        ${r.caveat ? `<div class="note warn mt14">${esc(r.caveat)}</div>` : ''}
+      </div>`;
+    (r.hypotheses || []).forEach((h, i) => {
+      const blankBtn = document.querySelector(`[data-hblank="${i}"]`);
+      const dynBtn = document.querySelector(`[data-hdyn="${i}"]`);
+      if (blankBtn) blankBtn.onclick = async () => {
+        await guard(() => H.card.addClaim({ id: b.id, claim: { layer: DOMAIN_LAYER[h.domain] || 'life', text: `待验证：${h.text}`, epistemic: 'blank', source: 'ai', refs: [], confidence: 0, note: `来自突发解读（${LIKE_MAP[h.likelihood]}可能）` } }));
+        toast('已转入理解卡空白层，可在「想多了解的」里看到', 'ok');
+        blankBtn.disabled = true;
+      };
+      if (dynBtn) dynBtn.onclick = async () => {
+        await guard(() => H.card.addDyn({ id: b.id, text: `待观察：${h.text}` }));
+        toast('已记为动态状态', 'ok');
+        dynBtn.disabled = true;
+      };
+    });
+  }
+
+  function bindUnseen(el, b) {
+    $('#unseenGo').onclick = async () => {
+      const message = $('#unseenMsg').value.trim();
+      if (!message) return toast('请粘贴消息原文', 'err');
+      const btn = $('#unseenGo');
+      btn.disabled = true;
+      const r = await guard(() => H.analysis.unseen({ id: b.id, message, context: $('#unseenCtx').value.trim() }), '解读中…检索相关往事');
+      btn.disabled = false;
+      if (!r) return;
+      renderUnseen(b, r);
+    };
+  }
+
   async function viewAnalysis(el) {
     const b = await guard(() => H.persons.get({ id: state.currentId }), '加载中…');
     if (!b) return;
@@ -231,13 +305,15 @@
       <div class="chips mb14">
         <span class="chip ${mode === 'person' ? 'active' : ''}" data-amode="person">对 TA 的完整分析</span>
         <span class="chip ${mode === 'scenario' ? 'active' : ''}" data-amode="scenario">对场景的推演分析</span>
+        <span class="chip ${mode === 'unseen' ? 'active' : ''}" data-amode="unseen">突发消息解读</span>
       </div>
-      <div id="anaBody">${mode === 'person' ? personBody(b, stats) : scenarioBody(b, sessions || [])}</div>
+      <div id="anaBody">${mode === 'person' ? personBody(b, stats) : mode === 'unseen' ? unseenBody(b) : scenarioBody(b, sessions || [])}</div>
     `;
     el.querySelectorAll('[data-amode]').forEach(chip => {
       chip.onclick = () => { mode = chip.dataset.amode; viewAnalysis(el); };
     });
     if (mode === 'person') bindPerson(el, b, stats);
+    else if (mode === 'unseen') bindUnseen(el, b);
     else bindScenario(el, b, sessions || []);
   }
 

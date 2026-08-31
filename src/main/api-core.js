@@ -268,6 +268,7 @@ function createCore({ dataDir, version, platform, secure }) {
       const digest = pipeline.personDigest(b, store);
       return { ...r, digest };
     }),
+    'analysis:unseen': ({ id, message, context }) => withPerson(id, async b => pipeline.analyzeUnseen(store, b, effectiveSettings(), { message, context })),
     'analysis:followUp': ({ id, digest, history, question }) => withPerson(id, async b => ({
       answer: (await pipeline.analysisFollowUp(store, b, effectiveSettings(), { digest, history, question })).answer,
     })),

@@ -802,6 +802,26 @@ async function main() {
     storeA.deletePerson(bA.id);
   });
 
+  await test('突发消息解读（mock）：结构化假说 + 空消息报错', async () => {
+    const storeB = new Store();
+    storeB.init(fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-un-')));
+    const bB = storeB.createPerson('解读测试', '');
+    let threw = false;
+    try { await pipeline.analyzeUnseen(storeB, bB, SETTINGS, { message: '   ', context: '' }); } catch { threw = true; }
+    assert.ok(threw, '空消息应报错');
+    const r = await pipeline.analyzeUnseen(storeB, bB, SETTINGS, { message: '她突然发来：在忙吗？周末有空吗？', context: '两周没联系了' });
+    assert.ok(Array.isArray(r.hypotheses) && r.hypotheses.length >= 1, '应返回假说数组');
+    for (const h of r.hypotheses) {
+      assert.ok(['high', 'mid', 'low'].includes(h.likelihood), '可能性枚举合法');
+      assert.ok(['工作', '家庭', '健康', '情绪', '社交', '关系', '其他'].includes(h.domain), '领域枚举合法');
+    }
+    assert.ok(r.literal && r.response, '字面解读与回应建议应存在');
+    // 假说可转为理解卡空白条目（闭环入口）
+    storeB.addClaim(bB, { layer: 'life', text: '待验证：' + r.hypotheses[0].text, epistemic: 'blank', source: 'ai', refs: [], confidence: 0, note: '来自突发解读' });
+    assert.ok(bB.claims.some(c => c.epistemic === 'blank' && c.note === '来自突发解读'));
+    storeB.deletePerson(bB.id);
+  });
+
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`\n结果：${passed} 通过，${failed} 失败`);
   if (failed) { for (const f of failures) console.log('FAIL', f.name, f.err.stack); process.exit(1); }
