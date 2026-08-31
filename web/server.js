@@ -31,7 +31,14 @@ function defaultDataDir() {
 const ROOT = path.join(__dirname, '..');
 const RENDERER = path.join(ROOT, 'src', 'renderer');
 const PORT = Number(arg('port', process.env.HABITAT_WEB_PORT || 4173));
+const HOST = String(arg('host', process.env.HABITAT_WEB_HOST || '127.0.0.1'));
+// LAN/手机访问必须显式提供 --token（该服务无登录体系；令牌即唯一门禁）
+const TOKEN = String(arg('token', process.env.HABITAT_WEB_TOKEN || ''));
 const DATA_DIR = path.resolve(arg('data', process.env.HABITAT_DATA_DIR || defaultDataDir()));
+if (HOST !== '127.0.0.1' && HOST !== 'localhost' && !TOKEN) {
+  console.error('拒绝启动：对非回环地址开放时必须提供 --token <随机串>（原话库/理解卡属私人数据）');
+  process.exit(1);
+}
 
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
@@ -51,6 +58,7 @@ const MAX_BODY = 25 * 1024 * 1024;
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
 };
 
 let indexHtml = null;
@@ -105,6 +113,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') return serveStatic(res, url.pathname);
 
     if (req.method === 'POST' && url.pathname.startsWith('/api/')) {
+      if (TOKEN) {
+        const auth = String(req.headers['authorization'] || '');
+        if (auth !== 'Bearer ' + TOKEN) return send(res, 401, JSON.stringify({ ok: false, error: '未授权：令牌缺失或不匹配' }));
+      }
       const channel = url.pathname.slice(5);
       if (!ALLOWED.has(channel)) return send(res, 404, JSON.stringify({ ok: false, error: '未知接口' }));
 
@@ -138,10 +150,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 // 仅本机回环地址：该服务无鉴权，禁止对局域网开放
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, HOST, () => {
   console.log('知微 · Web 宿主已启动');
-  console.log('  地址:     http://127.0.0.1:' + PORT);
+  console.log('  地址:     http://' + HOST + ':' + PORT);
   console.log('  数据目录: ' + DATA_DIR);
+  console.log('  令牌:     ' + (TOKEN ? '已启用（API 需要 Bearer <token>）' : '未启用（仅回环访问）'));
+  if (HOST !== '127.0.0.1' && HOST !== 'localhost') console.log('  警告:     服务对局域网开放，请确保 --token 足够随机');
   console.log('  注意:     与桌面版共用档案时，请勿同时运行两者并写入');
   process.on('uncaughtException', (err) => core.logError(err));
   process.on('unhandledRejection', (reason) => core.logError(reason instanceof Error ? reason : new Error(String(reason))));

@@ -1,0 +1,67 @@
+/* 知微 · 移动端适配（≤820px）：侧栏转为顶部横排导航，布局纵向堆叠 */
+@media (max-width: 820px) {
+  .app { flex-direction: column; height: 100dvh; }
+
+  /* 侧栏 → 顶部条：品牌 + 横向滚动导航 */
+  .sidebar {
+    width: 100%; flex: 0 0 auto;
+    flex-direction: row; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  .brand { padding: 0 4px 0 0; gap: 8px; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
+  .brand-name { font-size: 15px; }
+  .brand-sub { display: none; }
+  .nav { flex-direction: row; gap: 2px; margin: 0; flex: 1; }
+  .nav-item { padding: 8px 10px; white-space: nowrap; flex: 0 0 auto; }
+  .nav-item svg { width: 15px; height: 15px; }
+  .sidebar-foot { display: contents; }
+  .person-chip { margin: 0; padding: 6px 8px; max-width: 120px; cursor: pointer; }
+  .mode-chip { display: none; }
+
+  /* 主区 */
+  .main { padding: 14px 14px 28px; overflow-x: hidden; }
+  .page-head { padding-bottom: 12px; }
+  .page-title { font-size: 20px; }
+  .page-desc { font-size: 12.5px; }
+
+  /* 网格与面板堆叠 */
+  .person-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-row { gap: 8px; }
+  .stat-card { min-width: calc(50% - 4px); padding: 12px 14px; }
+  .stat-num { font-size: 22px; }
+  .row { flex-direction: column; gap: 0; }
+  .chips { max-height: none; }
+
+  /* 深度分析双列改单列 */
+  .cols { grid-template-columns: 1fr; }
+
+  /* 聊天 */
+  .chat-wrap { height: calc(100dvh - 230px); min-height: 320px; }
+  .chat-msg .bubble { max-width: 88%; }
+
+  /* 直方图 */
+  .histo { height: 84px; }
+  .hcol span { font-size: 9px; }
+
+  /* 触控目标 */
+  .btn { padding: 10px 16px; }
+  .btn.sm { padding: 7px 12px; }
+  input[type=text], input[type=password], input[type=number], textarea, select { font-size: 16px; /* 防 iOS 聚焦缩放 */ padding: 10px 12px; }
+
+  /* 模态与 toast */
+  .modal { width: calc(100vw - 20px); max-height: 86dvh; padding: 18px 16px; }
+  .modal-ops { flex-wrap: wrap; }
+  .toasts { left: 12px; right: 12px; bottom: 14px; }
+  .toast { max-width: none; }
+
+  /* HUD 档案双列改单列 */
+  .hud-pgrid { grid-template-columns: 1fr; }
+  .hud-layers { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 420px) {
+  .person-grid { grid-template-columns: 1fr; }
+  .page-title { font-size: 18px; }
+}

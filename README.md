@@ -39,6 +39,16 @@
 
 **从旧版本升级**：数据目录保持不变，老档案无感延续；旧版导出的卡片文件可直接导入。
 
+## 移动端（Android）
+
+三条路径（详见 [docs/android.md](docs/android.md) 与 [mobile/README.md](mobile/README.md)）：
+
+1. **手机访问电脑**：`node web/server.js --host 0.0.0.0 --token <随机串>` → 手机浏览器打开 `http://<电脑IP>:4188/?token=<随机串>`（零构建，PWA 可加主屏幕）
+2. **PWA**：同上安装后独立窗口运行
+3. **独立 APK**：Capacitor + nodejs-mobile 把 Node 后端装进应用沙箱，完全离线（构建需 Android Studio）
+
+安全：服务无登录体系，对局域网开放必须 `--token`（非回环地址缺令牌将拒绝启动）。
+
 ## 支持的 API 接入格式
 
 | 格式 | 适用服务商 | 认证方式 | 模型列表 |
@@ -148,6 +158,7 @@ contextIsolation + 无 nodeIntegration + CSP（script-src 'self'）· IPC id 严
 - [x] 人物状态栏（游戏风格速览，含档案槽位）
 - [x] 原话库洞察（时段分布/发起比例/回复间隔/长度对比）
 - [x] 深度分析追问（报告后连续提问）
+- [x] 移动端适配（响应式 + PWA + 局域网令牌 + Capacitor/nodejs-mobile 路径）
 - [ ] SQLite 存储后端（存储层已接口化）
 - [ ] 风格示例轮换池（防场景表达层被固定模仿）
 - [ ] 差异分析建议"确认后应用"模式

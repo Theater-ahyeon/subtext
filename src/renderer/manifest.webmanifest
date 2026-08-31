@@ -1,0 +1,18 @@
+{
+  "name": "知微 Subtext",
+  "short_name": "知微",
+  "description": "见微知著：从只言片语读懂一个人。为重要对话做练习的本地工具。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6efe4",
+  "theme_color": "#f6efe4",
+  "icons": [
+    {
+      "src": "/icons/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

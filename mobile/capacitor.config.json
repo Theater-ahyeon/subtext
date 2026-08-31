@@ -1,0 +1,12 @@
+{
+  "appId": "com.theater-ahyeon.subtext",
+  "appName": "知微",
+  "webDir": "src/renderer",
+  "server": {
+    "url": "http://127.0.0.1:4188",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

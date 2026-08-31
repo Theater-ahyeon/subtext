@@ -2,6 +2,14 @@
 
 所有重要变更记录在本文件。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [1.3.0] - 2026-08-31
+
+### Added —— Android / 移动端适配
+- **响应式布局**：≤820px 断点（侧栏转顶部横排导航、网格堆叠、触控目标加大、100dvh 动态视口、模态适配）
+- **PWA**：manifest + 图标，可「添加到主屏幕」独立运行
+- **局域网模式**：`web/server.js` 新增 `--host` / `--token`；对非回环地址开放强制要求令牌，API 全部走 Bearer 校验；垫片自动携带令牌（`?token=` 首次注入）
+- **独立 APK 路径**：`mobile/` 提供 Capacitor + nodejs-mobile 集成配置（WebView 指向应用内回环 Node 服务，业务核心零重写），构建步骤见 mobile/README.md
+
 ## [1.2.5] - 2026-08-31
 
 ### Added —— 突发消息解读（未知因素假说分析）

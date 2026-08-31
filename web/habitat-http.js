@@ -10,9 +10,18 @@
   const invoke = async (channel, payload) => {
     let r;
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      // LAN/移动端：URL 带 ?token= 或 localStorage 中的令牌随 API 携带
+      try {
+        if (!localStorage.getItem('habitat_token') && location.search.indexOf('token=') !== -1) {
+          localStorage.setItem('habitat_token', new URLSearchParams(location.search).get('token'));
+        }
+      } catch {}
+      const tk = (() => { try { return localStorage.getItem('habitat_token'); } catch { return ''; } })();
+      if (tk) headers['Authorization'] = 'Bearer ' + tk;
       r = await fetch('/api/' + channel, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload || {}),
       });
     } catch {
