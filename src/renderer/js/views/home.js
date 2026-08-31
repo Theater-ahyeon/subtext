@@ -59,6 +59,7 @@
         const p = state.persons.find(x => x.id === card.dataset.id);
         state.currentId = card.dataset.id;
         state.currentName = p ? p.name : '';
+        HB.rememberPerson(card.dataset.id);
         state.session = null;
         HB.router.go('card');
       });
@@ -85,14 +86,14 @@
         const name = $('#mName').value.trim();
         if (!name) return toast('请填写称呼', 'err');
         const b = await guard(() => H.persons.create({ name, alias: $('#mAlias').value.trim() }), '创建中…');
-        if (b) { closeModal(); toast('已创建', 'ok'); state.currentId = b.id; state.currentName = name; state.session = null; HB.router.go('card'); }
+        if (b) { closeModal(); toast('已创建', 'ok'); state.currentId = b.id; state.currentName = name; state.session = null; HB.rememberPerson(b.id); HB.router.go('card'); }
       };
     };
     $('#addPersonCard') && ($('#addPersonCard').onclick = openCreate);
     $('#emptyAdd') && ($('#emptyAdd').onclick = openCreate);
     $('#importCardBtn').onclick = async () => {
       const r = await guard(() => H.card.importCard(), '导入中…');
-      if (r && !r.canceled) { toast(`已导入「${r.name}」（${r.claims} 条认知条目）`, 'ok'); state.currentId = r.id; state.currentName = r.name || ''; state.session = null; HB.router.go('card'); }
+      if (r && !r.canceled) { toast(`已导入「${r.name}」（${r.claims} 条认知条目）`, 'ok'); state.currentId = r.id; state.currentName = r.name || ''; state.session = null; HB.rememberPerson(r.id); HB.router.go('card'); }
     };
   }
 

@@ -8,6 +8,11 @@
 
   function needsAttention() { return false; }
 
+  /** 记住上次选择的对象（localStorage 持久化，刷新/重启后自动恢复） */
+  HB.rememberPerson = function (id) {
+    try { localStorage.setItem('habitat_last_person', id); } catch {}
+  };
+
   function renderNav() {
     const nav = $('#nav');
     nav.innerHTML = NAV.map(n =>
@@ -45,7 +50,7 @@
 
   function go(view) {
     // 设置与人物页不依赖当前人物；其余视图需要先选择人物
-    if (!['home', 'settings', 'graph'].includes(view) && !state.currentId) { toast('请先创建并选择一位对象', 'err'); return; }
+    if (!['home', 'settings', 'graph'].includes(view) && !state.currentId) { toast('请先在「关系」页点击一份档案选中 TA', 'err'); return; }
     state.view = view;
     renderNav();
     render();
