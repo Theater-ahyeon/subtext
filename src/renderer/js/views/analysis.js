@@ -8,6 +8,70 @@
 
   let mode = 'person';
   let scenarioDraft = '';
+  let lastDigest = null;
+  let anaHistory = [];
+
+  /** 原话库洞察（第一性：把已存证据转化为统计洞察，全部本地计算） */
+  function computeInsights(b) {
+    const items = b.evidence.filter(e => e.ts && e.ts.includes('T')).sort((a, c) => a.ts.localeCompare(c.ts));
+    const hours = new Array(24).fill(0);
+    for (const e of items) {
+      const h = Number(e.ts.slice(11, 13));
+      if (!isNaN(h)) hours[h]++;
+    }
+    // 会话片段：间隔超过 6 小时视为新片段，片段首条 = 发起者
+    const GAP = 6 * 3600 * 1000;
+    const segs = [];
+    let cur = null, lastTs = 0;
+    for (const e of items) {
+      const t = Date.parse(e.ts);
+      if (isNaN(t)) continue;
+      if (!cur || t - lastTs > GAP) { cur = { init: e.isSelf, n: 1 }; segs.push(cur); }
+      else cur.n++;
+      lastTs = t;
+    }
+    const multi = segs.filter(s => s.n >= 2);
+    const taInit = multi.filter(s => s.init === false).length;
+    const meInit = multi.filter(s => s.init === true).length;
+    // 回复间隔：发送者切换处的间隔（分钟），限 24 小时内
+    const gaps = [];
+    for (let i = 1; i < items.length; i++) {
+      if (items[i].isSelf !== null && items[i - 1].isSelf !== null && items[i].isSelf !== items[i - 1].isSelf) {
+        const g = (Date.parse(items[i].ts) - Date.parse(items[i - 1].ts)) / 60000;
+        if (g >= 0 && g < 1440) gaps.push(g);
+      }
+    }
+    const med = gaps.length ? [...gaps].sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : null;
+    const avgLen = (isSelf) => {
+      const arr = items.filter(e => e.isSelf === isSelf && e.text);
+      return arr.length ? Math.round(arr.reduce((s, e) => s + e.text.length, 0) / arr.length) : null;
+    };
+    return {
+      dated: items.length, total: b.evidence.length, hours,
+      segCount: multi.length, taInit, meInit,
+      medGap: med, taLen: avgLen(false), meLen: avgLen(true),
+    };
+  }
+
+  function insightsHtml(ins) {
+    if (ins.dated < 3) return '';
+    const peak = ins.hours.indexOf(Math.max(...ins.hours));
+    const fmtGap = ins.medGap == null ? '—' : (ins.medGap < 60 ? Math.round(ins.medGap) + ' 分钟' : (ins.medGap / 60).toFixed(1) + ' 小时');
+    return `
+      <div class="panel" data-glow>
+        <div class="panel-title">原话库洞察 <span class="muted small" style="font-weight:400">${ins.dated}/${ins.total} 条有时间戳</span></div>
+        <div class="stat-row mb14">
+          <div class="stat-card violet" data-glow><div class="stat-num">${ins.taInit}<span class="unit">/${ins.segCount}</span></div><div class="stat-label">TA 先开口的会话片段</div></div>
+          <div class="stat-card blue" data-glow><div class="stat-num">${fmtGap}</div><div class="stat-label">TA 回复间隔中位数</div></div>
+          <div class="stat-card jade" data-glow><div class="stat-num">${ins.taLen == null ? '—' : ins.taLen}<span class="unit">字</span></div><div class="stat-label">TA 平均消息长度</div></div>
+          <div class="stat-card amber" data-glow><div class="stat-num">${ins.meLen == null ? '—' : ins.meLen}<span class="unit">字</span></div><div class="stat-label">我平均消息长度</div></div>
+        </div>
+        <div class="panel-sub">TA 消息的高峰时段：<b>${String(peak).padStart(2, '0')}:00 前后</b>（按时间戳小时统计；间隔超过 6 小时视为新会话片段）</div>
+        <div class="histo">
+          ${ins.hours.map((c, h) => `<div class="hcol" title="${String(h).padStart(2, '0')}:00 — ${c} 条"><i style="height:${Math.max(3, Math.round(c / Math.max(1, Math.max(...ins.hours))) * 60)}px"></i><span>${h % 3 === 0 ? String(h).padStart(2, '0') : ''}</span></div>`).join('')}
+        </div>
+      </div>`;
+  }
 
   /** 原话库近 12 个月分布（本地统计，无网络） */
   function histogram(b) {
@@ -45,8 +109,10 @@
   }
 
   function personBody(b, stats) {
+    const ins = computeInsights(b);
     return `
       ${statRow(b, stats)}
+      ${insightsHtml(ins)}
       ${histoHtml(b)}
       <div class="panel hairline-top" data-glow>
         <div class="panel-title">生成完整分析</div>
@@ -83,8 +149,42 @@
       const r = await guard(() => H.analysis.person({ id: b.id }), '分析中…汇总理解卡与全部记忆');
       btn.disabled = false;
       if (!r) return;
-      $('#anaReport').innerHTML = `<div class="panel hairline-top" data-glow><div class="panel-title">完整分析报告 <span class="muted small" style="font-weight:400">${new Date().toISOString().slice(0, 16).replace('T', ' ')}</span></div>${md(r.report)}</div>`;
+      lastDigest = r.digest || null;
+      anaHistory = [];
+      $('#anaReport').innerHTML = `
+        <div class="panel hairline-top" data-glow>
+          <div class="panel-title">完整分析报告 <span class="muted small" style="font-weight:400">${new Date().toISOString().slice(0, 16).replace('T', ' ')}</span></div>
+          ${md(r.report)}
+        </div>
+        <div class="panel" data-glow>
+          <div class="panel-title">继续追问</div>
+          <div class="panel-sub">基于同一份本地数据与上面的报告继续提问（例如："TA 为什么回避冲突？""帮我规划下次聊什么"）。</div>
+          <div id="anaQA"></div>
+          <div class="flex">
+            <input type="text" id="anaQ" placeholder="追问…" maxlength="500" style="flex:1">
+            <button class="btn primary" id="anaQGo">发送</button>
+          </div>
+        </div>`;
+      $('#anaQGo').onclick = ask;
+      $('#anaQ').addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
     };
+    async function ask() {
+      const q = $('#anaQ').value.trim();
+      if (!q) return toast('请输入追问', 'err');
+      const btn = $('#anaQGo'), input = $('#anaQ');
+      btn.disabled = true;
+      const r = await guard(() => H.analysis.followUp({ id: b.id, digest: lastDigest, history: anaHistory, question: q }), '分析中…');
+      btn.disabled = false;
+      if (!r) return;
+      anaHistory.push({ q, a: r.answer });
+      input.value = '';
+      $('#anaQA').insertAdjacentHTML('beforeend',
+        `<div class="list-row"><span class="badge plain">问</span><div class="grow"><div class="list-title">${esc(q)}</div></div></div>
+         <div class="panel" data-glow style="margin-bottom:12px">${md(r.answer)}</div>`);
+      const qa = $('#anaQA');
+      qa.scrollTop = qa.scrollHeight;
+      qa.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
   }
 
   function bindScenario(el, b, sessions) {

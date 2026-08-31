@@ -790,6 +790,18 @@ async function main() {
     assert.strictEqual(r.messages[1].isSelf, true, 'is_from_me=1 应标记本人');
   });
 
+  await test('深度分析追问：空问题报错；mock 追问返回 Markdown', async () => {
+    const storeA = new Store();
+    storeA.init(fs.mkdtempSync(path.join(os.tmpdir(), 'rehearsal-fu-')));
+    const bA = storeA.createPerson('追问测试', '');
+    let threw = false;
+    try { await pipeline.analysisFollowUp(storeA, bA, SETTINGS, { digest: {}, history: [], question: '  ' }); } catch { threw = true; }
+    assert.ok(threw, '空追问应报错');
+    const r = await pipeline.analysisFollowUp(storeA, bA, SETTINGS, { digest: { stats: {} }, history: [{ q: '之前问过什么', a: '之前的回答' }], question: 'TA 为什么回避冲突？' });
+    assert.ok(r.answer.includes('##'), '追问回答应为 Markdown');
+    storeA.deletePerson(bA.id);
+  });
+
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`\n结果：${passed} 通过，${failed} 失败`);
   if (failed) { for (const f of failures) console.log('FAIL', f.name, f.err.stack); process.exit(1); }

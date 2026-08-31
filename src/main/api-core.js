@@ -263,7 +263,14 @@ function createCore({ dataDir, version, platform, secure }) {
     'profile:extract': ({ id }) => withPerson(id, async b => ({ profile: await pipeline.profileExtract(store, b, effectiveSettings()) })),
 
     // ---------- 深度分析 ----------
-    'analysis:person': ({ id }) => withPerson(id, async b => pipeline.analyzePerson(store, b, effectiveSettings())),
+    'analysis:person': ({ id }) => withPerson(id, async b => {
+      const r = await pipeline.analyzePerson(store, b, effectiveSettings());
+      const digest = pipeline.personDigest(b, store);
+      return { ...r, digest };
+    }),
+    'analysis:followUp': ({ id, digest, history, question }) => withPerson(id, async b => ({
+      answer: (await pipeline.analysisFollowUp(store, b, effectiveSettings(), { digest, history, question })).answer,
+    })),
     'analysis:scenario': ({ id, scenario }) => withPerson(id, async b => pipeline.analyzeScenario(store, b, effectiveSettings(), scenario)),
 
     // ---------- interview ----------

@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('habitat', {
   analysis: {
     person: (p) => invoke('analysis:person', p),
     scenario: (p) => invoke('analysis:scenario', p),
+    followUp: (p) => invoke('analysis:followUp', p),
   },
   memory: {
     list: (p) => invoke('memory:list', p),

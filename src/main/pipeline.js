@@ -618,10 +618,21 @@ async function analyzeScenario(store, bundle, settings, scenario) {
   return { report, recalled: recalled.items };
 }
 
+/** 深度分析追问：同一份 digest + 既有问答上下文（无状态，渲染层持有会话） */
+async function analysisFollowUp(store, bundle, settings, { digest, history, question }) {
+  const q = clampText(question, 1000);
+  if (!q.trim()) throw new Error('请输入追问内容');
+  const hist = (history || []).slice(-6).map(h => ({ q: clampText(h.q, 500), a: clampText(h.a, 4000) }));
+  const answer = await chat(settings, [
+    { role: 'user', content: P.analysisFollowUpPrompt(bundle, JSON.stringify(digest || {}), hist, q) },
+  ], { task: 'ANALYZE_PERSON', temperature: settings.analysisTemperature });
+  return { answer };
+}
+
 module.exports = {
   inductEvidence, startSession, twinTurn, endSession, sessionTranscript,
   freezePrediction, submitFeedback, applyUpdates, undoAttribution, topicRadar,
   interviewAnswer, interviewProbeAnswer, interviewSummary, interviewFinalize, interviewWriteClaims,
   chunkEvidence, evidenceLine, similar, clamp01, inductionMessages, MAX_IMAGES_PER_CHUNK,
-  ensureProfile, applyProfile, profileExtract, personDigest, analyzePerson, analyzeScenario,
+  ensureProfile, applyProfile, profileExtract, personDigest, analyzePerson, analyzeScenario, analysisFollowUp,
 };
